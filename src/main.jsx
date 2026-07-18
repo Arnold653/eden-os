@@ -3,12 +3,17 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import { supabase } from './supabaseClient.js';
 
+// ---------------------------------------------------------------
+// window.storage backed by Supabase (table app_data, RLS scoped
+// to auth.uid()). Preloads all rows for the signed-in user once,
+// then serves get/set/list from an in-memory cache kept in sync.
+// ---------------------------------------------------------------
 function buildStorage(userId) {
   const cache = new Map();
   return {
     async _preload() {
       const { data, error } = await supabase.from('app_data').select('key,value').eq('user_id', userId);
-      if (error) throw error;
+      if (error) { window.alert('Erreur de chargement des données : ' + error.message); throw error; }
       (data || []).forEach(row => cache.set(row.key, row.value));
     },
     async get(key) {
@@ -18,8 +23,9 @@ function buildStorage(userId) {
     async set(key, value) {
       const parsed = JSON.parse(value);
       cache.set(key, parsed);
-      const { error } = await supabase.from('app_data').upsert({ user_id: userId, key, value: parsed, updated_at: new Date().toISOString() });
-      if (error) console.error('Supabase set error:', error);
+      const { error } = await supabase.from('app_data')
+        .upsert({ user_id: userId, key, value: parsed, updated_at: new Date().toISOString() }, { onConflict: 'user_id,key' });
+      if (error) { console.error('Supabase set error:', error); window.alert('Erreur de sauvegarde (' + key + ') : ' + error.message); }
       return { key, value, shared: false };
     },
     async delete(key) {
@@ -95,7 +101,7 @@ function Loading(text) {
 }
 
 function Root() {
-  const [session, setSession] = useState(undefined);
+  const [session, setSession] = useState(undefined); // undefined = loading, null = logged out
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -139,4 +145,4 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js').catch(() => {});
   });
-  }
+}
