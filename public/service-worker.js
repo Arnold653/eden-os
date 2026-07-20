@@ -1,4 +1,4 @@
-const CACHE_NAME = 'intendance-v2';
+const CACHE_NAME = 'intendance-v3';
 const APP_SHELL = ['/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -19,6 +19,11 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Never touch cross-origin requests (Supabase's API, or anything else
+  // that isn't this site's own files). Let the browser handle those
+  // completely normally, with zero caching — data must always be fresh.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
 
   // Navigations (the HTML shell): always try the network first, so a new
   // deployment is visible immediately. Only fall back to cache if offline.
