@@ -2008,11 +2008,26 @@ function formatNoteDate(d) {
   catch (e) { return d; }
 }
 
+function nextNumero(journal) {
+  return journal.reduce((max, j) => Math.max(max, j.numero || 0), 0) + 1;
+}
+
 function JournalNotes({ journal, saveJournal, onTrash }) {
   const [openId, setOpenId] = useState(null);
+  const [view, setView] = useState('notes');
+
+  // Backfill : numérote une fois pour toutes les entrées historiques (ordre chronologique, jamais renuméré ensuite).
+  useEffect(() => {
+    if (journal.length > 0 && journal.some(j => !j.numero)) {
+      const chronological = [...journal].reverse();
+      const renumbered = chronological.map((j, i) => j.numero ? j : { ...j, numero: i + 1 });
+      saveJournal([...renumbered].reverse());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function createNote() {
-    const n = { id: uid(), date: todayISO(), titre: '', texte: '', tags: [] };
+    const n = { id: uid(), date: todayISO(), titre: '', texte: '', tags: [], numero: nextNumero(journal) };
     saveJournal([n, ...journal]);
     setOpenId(n.id);
   }
@@ -2045,41 +2060,95 @@ function JournalNotes({ journal, saveJournal, onTrash }) {
 
   const sorted = [...journal].sort((a, b) => new Date(b.date) - new Date(a.date));
 
+  const index = {};
+  journal.forEach(j => { (j.tags || []).forEach(t => { (index[t] = index[t] || []).push(j); }); });
+  const topics = Object.keys(index).sort((a, b) => a.localeCompare(b));
+
   return (
     <div>
       <button onClick={createNote} style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '13px 14px', marginBottom: 16,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '13px 14px', marginBottom: 14,
         borderRadius: 12, border: 'none', background: C.navy, color: '#fff',
         fontSize: 13.5, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.14)',
       }}>
         <Plus size={16} /> Nouvelle note
       </button>
 
-      {sorted.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Le journal est vide. Ta première note n'attend qu'à être écrite.</p>}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        {[['notes', 'Notes'], ['index', 'Index']].map(([k, label]) => (
+          <button key={k} onClick={() => setView(k)} style={{
+            flex: 1, padding: '9px', borderRadius: 8, border: `1px solid ${C.line}`, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            background: view === k ? C.navy : '#fff', color: view === k ? '#fff' : C.ink,
+          }}>{label}</button>
+        ))}
+      </div>
 
-      <div style={{ display: 'grid', gap: 10 }}>
-        {sorted.map(j => {
-          const accent = (j.tags && j.tags[0]) ? tagColor(j.tags[0]) : C.line;
-          return (
-            <div key={j.id} onClick={() => setOpenId(j.id)} style={{
-              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 14px 14px 13px', cursor: 'pointer',
-              background: C.surface, borderRadius: 12, border: `1px solid ${C.line}`, borderLeft: `3px solid ${accent}`,
-              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-            }}>
-              <FileText size={16} color={C.fade} style={{ marginTop: 3, flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14.5, fontWeight: 700, color: C.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{noteTitle(j)}</div>
-                {notePreview(j) && <div style={{ fontSize: 12, color: C.fade, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notePreview(j)}</div>}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 10.5, color: C.fade }}>{formatNoteDate(j.date)}</span>
-                  {(j.tags || []).slice(0, 3).map((t, i) => <Pill key={i} color={tagColor(t)}>{t}</Pill>)}
+      {view === 'notes' && (
+        <>
+          {sorted.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Le journal est vide. Ta première note n'attend qu'à être écrite.</p>}
+          <div style={{ display: 'grid', gap: 10 }}>
+            {sorted.map(j => {
+              const accent = (j.tags && j.tags[0]) ? tagColor(j.tags[0]) : C.line;
+              return (
+                <div key={j.id} onClick={() => setOpenId(j.id)} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 14px 14px 13px', cursor: 'pointer',
+                  background: C.surface, borderRadius: 12, border: `1px solid ${C.line}`, borderLeft: `3px solid ${accent}`,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, marginTop: 2 }}>
+                    <FileText size={16} color={C.fade} />
+                    {j.numero && <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.fade, fontWeight: 700, marginTop: 3 }}>N°{j.numero}</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: C.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{noteTitle(j)}</div>
+                    {notePreview(j) && <div style={{ fontSize: 12, color: C.fade, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notePreview(j)}</div>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10.5, color: C.fade }}>{formatNoteDate(j.date)}</span>
+                      {(j.tags || []).slice(0, 3).map((t, i) => <Pill key={i} color={tagColor(t)}>{t}</Pill>)}
+                    </div>
+                  </div>
+                  <IconBtn onClick={e => { e.stopPropagation(); deleteNote(j.id); }}><Trash2 size={14} /></IconBtn>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {view === 'index' && (
+        <>
+          <p style={{ fontSize: 11.5, color: C.fade, marginTop: -4, marginBottom: 14, fontStyle: 'italic' }}>
+            Comme l'index des « Miscellanies » de Jonathan Edwards : chaque note garde son numéro d'origine, et l'index te permet de retrouver toutes les notes liées à un même thème sans jamais les reclasser.
+          </p>
+          {topics.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Ajoute des tags à tes notes pour construire ton index thématique.</p>}
+          <div style={{ display: 'grid', gap: 12 }}>
+            {topics.map(topic => (
+              <div key={topic}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <Pill color={tagColor(topic)}>{topic}</Pill>
+                  <span style={{ fontSize: 11, color: C.fade }}>{index[topic].length} note{index[topic].length > 1 ? 's' : ''}</span>
+                </div>
+                <div style={{ display: 'grid', gap: 6, paddingLeft: 4, borderLeft: `2px solid ${C.line}` }}>
+                  {index[topic]
+                    .sort((a, b) => (a.numero || 0) - (b.numero || 0))
+                    .map(j => (
+                      <div key={j.id} onClick={() => setOpenId(j.id)} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer',
+                        background: C.surface, borderRadius: 8,
+                      }}>
+                        <span style={{ fontSize: 12.5, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {j.numero && <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.fade, marginRight: 6 }}>N°{j.numero}</span>}
+                          {noteTitle(j)}
+                        </span>
+                        <span style={{ fontSize: 10, color: C.fade, flexShrink: 0 }}>{formatNoteDate(j.date)}</span>
+                      </div>
+                    ))}
                 </div>
               </div>
-              <IconBtn onClick={e => { e.stopPropagation(); deleteNote(j.id); }}><Trash2 size={14} /></IconBtn>
-            </div>
-          );
-        })}
-      </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2127,7 +2196,10 @@ function NoteEditor({ note, onChange, onClose, onDelete }) {
         borderBottom: `1px solid ${C.line}`, background: C.bg, position: 'sticky', top: 0, zIndex: 1,
       }}>
         <IconBtn onClick={handleClose}><ChevronLeft size={20} /></IconBtn>
-        <span style={{ fontSize: 11, color: C.fade }}>{formatNoteDate(note.date)}</span>
+        <span style={{ fontSize: 11, color: C.fade, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {note.numero && <span style={{ fontFamily: FONT_MONO, fontWeight: 700 }}>N°{note.numero}</span>}
+          {formatNoteDate(note.date)}
+        </span>
         <IconBtn onClick={onDelete}><Trash2 size={17} /></IconBtn>
       </div>
 
