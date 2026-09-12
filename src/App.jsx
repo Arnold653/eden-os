@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Home, Receipt, HandCoins, CreditCard, PiggyBank, Settings as Gear, Plus, Trash2, ChevronLeft, ChevronRight, Check, X, BookOpen, Sparkles, Crown, Compass, Clock, HeartPulse, Gauge, GraduationCap, Users, LayoutGrid, Wallet, Download, Upload, Pencil, Copy, Search, Moon, ChevronDown, Droplet, Flame, Mic, Bell } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Home, Receipt, HandCoins, CreditCard, PiggyBank, Settings as Gear, Plus, Trash2, ChevronLeft, ChevronRight, Check, X, BookOpen, Sparkles, Crown, Compass, Clock, HeartPulse, Gauge, GraduationCap, Users, LayoutGrid, Wallet, Download, Upload, Pencil, Copy, Search, Moon, ChevronDown, Droplet, Flame, Mic, Bell, FileText, Tag } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import { supabase } from './supabaseClient.js';
 import { jsPDF } from 'jspdf';
@@ -1904,33 +1904,7 @@ function SagesseTab({ decisions, saveDecisions, journal, saveJournal, onTrash })
     saveDecisions(decisions.map(d => d.id === id ? { ...d, resultat, statut: 'relue' } : d));
   }
 
-  // --- journal form state ---
-  const [texte, setTexte] = useState('');
-  const [tagsInput, setTagsInput] = useState('');
-  const [editingJournalId, setEditingJournalId] = useState(null);
-  function addJournalEntry() {
-    if (!texte) return;
-    const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-    if (editingJournalId) {
-      saveJournal(journal.map(j => j.id === editingJournalId ? { ...j, texte, tags } : j));
-      setEditingJournalId(null);
-    } else {
-      saveJournal([{ id: uid(), date: todayISO(), texte, tags }, ...journal]);
-    }
-    setTexte(''); setTagsInput('');
-  }
-  function startEditJournal(j) {
-    setEditingJournalId(j.id); setTexte(j.texte); setTagsInput((j.tags || []).join(', '));
-  }
-  function cancelEditJournal() {
-    setEditingJournalId(null); setTexte(''); setTagsInput('');
-  }
-  function removeJournalEntry(id) {
-    const item = journal.find(j => j.id === id);
-    saveJournal(journal.filter(j => j.id !== id));
-    if (item) onTrash('journal', item);
-    if (editingJournalId === id) cancelEditJournal();
-  }
+  // --- journal (Notion-like notes) ---
 
   const today = todayISO();
   const dueDecisions = decisions.filter(d => d.majeure && d.statut === 'ouverte' && d.dateRelecture && d.dateRelecture <= today);
@@ -1997,43 +1971,197 @@ function SagesseTab({ decisions, saveDecisions, journal, saveJournal, onTrash })
       )}
 
       {subview === 'journal' && (
-        <div>
-          <SectionTitle sub="Leçons, erreurs, réflexions — libre, horodaté.">{editingJournalId ? 'Modifier l\'entrée' : 'Nouvelle entrée'}</SectionTitle>
-          <Card style={{ marginBottom: 14 }}>
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <textarea value={texte} onChange={e => setTexte(e.target.value)} placeholder="Qu'as-tu appris aujourd'hui ?" rows={4}
-                  style={{ flex: 1, border: `1px solid ${C.line}`, borderRadius: 8, padding: '9px 10px', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', background: C.surface, color: C.ink }} />
-                <MicButton onResult={t => setTexte(v => v ? v + ' ' + t : t)} />
-              </div>
-              <TextInput placeholder="Tags séparés par des virgules (ex: finances, famille)" value={tagsInput} onChange={e => setTagsInput(e.target.value)} />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <PrimaryButton onClick={addJournalEntry} disabled={!texte} style={{ flex: 1 }}>
-                  {editingJournalId ? <><Pencil size={15}/> Enregistrer les modifications</> : <><Plus size={15}/> Ajouter au journal</>}
-                </PrimaryButton>
-                {editingJournalId && <button onClick={cancelEditJournal} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer', color: C.ink }}>Annuler</button>}
+        <JournalNotes journal={journal} saveJournal={saveJournal} onTrash={onTrash} />
+      )}
+    </div>
+  );
+}
+
+// ---------- Journal — notes façon Notion (liste → note en plein écran) ----------
+function noteTitle(j) {
+  if (j.titre && j.titre.trim()) return j.titre.trim();
+  const t = (j.texte || '').trim();
+  if (!t) return 'Sans titre';
+  const firstLine = t.split('\n')[0];
+  return firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine;
+}
+function notePreview(j) {
+  const t = (j.texte || '').trim();
+  if (!t) return '';
+  const hasTitre = j.titre && j.titre.trim();
+  const lines = t.split('\n');
+  const body = hasTitre ? t : lines.slice(1).join(' ').trim();
+  const preview = (body || (hasTitre ? '' : lines[0]) || '').replace(/\s+/g, ' ').trim();
+  return preview.length > 90 ? preview.slice(0, 90) + '…' : preview;
+}
+function isNoteEmpty(j) {
+  return !j.titre?.trim() && !j.texte?.trim() && (!j.tags || j.tags.length === 0);
+}
+
+function JournalNotes({ journal, saveJournal, onTrash }) {
+  const [openId, setOpenId] = useState(null);
+
+  function createNote() {
+    const n = { id: uid(), date: todayISO(), titre: '', texte: '', tags: [] };
+    saveJournal([n, ...journal]);
+    setOpenId(n.id);
+  }
+  function updateNote(id, patch) {
+    saveJournal(journal.map(j => j.id === id ? { ...j, ...patch } : j));
+  }
+  function deleteNote(id) {
+    const item = journal.find(j => j.id === id);
+    saveJournal(journal.filter(j => j.id !== id));
+    if (item) onTrash('journal', item);
+    if (openId === id) setOpenId(null);
+  }
+  function closeNote(id) {
+    const n = journal.find(j => j.id === id);
+    if (n && isNoteEmpty(n)) saveJournal(journal.filter(j => j.id !== id));
+    setOpenId(null);
+  }
+
+  const openNote = journal.find(j => j.id === openId);
+  if (openNote) {
+    return (
+      <NoteEditor
+        note={openNote}
+        onChange={patch => updateNote(openNote.id, patch)}
+        onClose={() => closeNote(openNote.id)}
+        onDelete={() => deleteNote(openNote.id)}
+      />
+    );
+  }
+
+  const sorted = [...journal].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  return (
+    <div>
+      <button onClick={createNote} style={{
+        display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '12px 14px', marginBottom: 16,
+        borderRadius: 10, border: `1.5px dashed ${C.line}`, background: 'transparent', color: C.fade,
+        fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+      }}>
+        <Plus size={16} /> Nouvelle note
+      </button>
+
+      {sorted.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Le journal est vide. Ta première note n'attend qu'à être écrite.</p>}
+
+      <div style={{ display: 'grid' }}>
+        {sorted.map(j => (
+          <div key={j.id} onClick={() => setOpenId(j.id)} style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 6px', cursor: 'pointer',
+            borderBottom: `1px solid ${C.line}`,
+          }}>
+            <FileText size={16} color={C.fade} style={{ marginTop: 3, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{noteTitle(j)}</div>
+              {notePreview(j) && <div style={{ fontSize: 12, color: C.fade, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notePreview(j)}</div>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 10.5, color: C.fade }}>{j.date}</span>
+                {(j.tags || []).slice(0, 3).map((t, i) => <Pill key={i} color={C.purple}>{t}</Pill>)}
               </div>
             </div>
-          </Card>
-          <SectionTitle>Entrées</SectionTitle>
-          {journal.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Le journal est vide.</p>}
-          <div style={{ display: 'grid', gap: 8 }}>
-            {journal.map(j => (
-              <Card key={j.id}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 11, color: C.fade }}>{j.date}</span>
-                  <div style={{ display: 'flex', gap: 2 }}>
-                    <IconBtn onClick={() => startEditJournal(j)}><Pencil size={14} /></IconBtn>
-                    <IconBtn onClick={() => removeJournalEntry(j.id)}><Trash2 size={14} /></IconBtn>
-                  </div>
-                </div>
-                <p style={{ fontSize: 13, margin: '4px 0' }}>{j.texte}</p>
-                {j.tags.length > 0 && <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{j.tags.map((t,i) => <Pill key={i} color={C.purple}>{t}</Pill>)}</div>}
-              </Card>
+            <IconBtn onClick={e => { e.stopPropagation(); deleteNote(j.id); }}><Trash2 size={14} /></IconBtn>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NoteEditor({ note, onChange, onClose, onDelete }) {
+  const [titre, setTitre] = useState(note.titre || '');
+  const [texte, setTexte] = useState(note.texte || '');
+  const [tags, setTags] = useState(note.tags || []);
+  const [tagDraft, setTagDraft] = useState('');
+  const timerRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    setTitre(note.titre || ''); setTexte(note.texte || ''); setTags(note.tags || []); setTagDraft('');
+    requestAnimationFrame(() => autoGrow(textareaRef.current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id]);
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  function autoGrow(el) { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }
+  function scheduleSave(patch) {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onChange(patch), 500);
+  }
+  function handleTitreChange(v) { setTitre(v); scheduleSave({ titre: v }); }
+  function handleTexteChange(e) { const v = e.target.value; setTexte(v); autoGrow(e.target); scheduleSave({ texte: v }); }
+  function commitTags(next) { setTags(next); if (timerRef.current) clearTimeout(timerRef.current); onChange({ tags: next }); }
+  function addTagFromDraft() {
+    const t = tagDraft.trim();
+    setTagDraft('');
+    if (!t || tags.includes(t)) return;
+    commitTags([...tags, t]);
+  }
+  function removeTag(t) { commitTags(tags.filter(x => x !== t)); }
+  function handleClose() {
+    if (timerRef.current) { clearTimeout(timerRef.current); onChange({ titre, texte }); }
+    onClose();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: C.bg, zIndex: 30, overflowY: 'auto' }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px',
+        borderBottom: `1px solid ${C.line}`, background: C.bg, position: 'sticky', top: 0, zIndex: 1,
+      }}>
+        <IconBtn onClick={handleClose}><ChevronLeft size={20} /></IconBtn>
+        <span style={{ fontSize: 11, color: C.fade }}>{note.date}</span>
+        <IconBtn onClick={onDelete}><Trash2 size={17} /></IconBtn>
+      </div>
+
+      <div style={{ padding: '22px 20px 60px', maxWidth: 640, margin: '0 auto' }}>
+        <input
+          value={titre}
+          onChange={e => handleTitreChange(e.target.value)}
+          placeholder="Sans titre"
+          style={{
+            width: '100%', border: 'none', outline: 'none', background: 'transparent',
+            fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 800, color: C.heading, padding: 0, marginBottom: 14,
+          }}
+        />
+        <textarea
+          ref={textareaRef}
+          value={texte}
+          onChange={handleTexteChange}
+          placeholder="Écris quelque chose…"
+          rows={1}
+          style={{
+            width: '100%', border: 'none', outline: 'none', background: 'transparent', resize: 'none',
+            fontFamily: 'inherit', fontSize: 15, lineHeight: 1.7, color: C.ink, padding: 0, minHeight: 200, overflow: 'hidden',
+          }}
+        />
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 28, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
+          <Tag size={14} color={C.fade} style={{ marginTop: 4, flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', flex: 1 }}>
+            {tags.map(t => (
+              <span key={t} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, background: C.cream, color: C.purple,
+                borderRadius: 999, padding: '3px 9px', fontSize: 11.5, fontWeight: 600,
+              }}>
+                {t}
+                <X size={11} style={{ cursor: 'pointer' }} onClick={() => removeTag(t)} />
+              </span>
             ))}
+            <input
+              value={tagDraft}
+              onChange={e => setTagDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTagFromDraft(); } }}
+              onBlur={addTagFromDraft}
+              placeholder={tags.length ? 'Ajouter…' : 'Ajouter un tag'}
+              style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12, color: C.ink, flex: 1, minWidth: 90, padding: '3px 0' }}
+            />
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -3589,7 +3717,7 @@ function trashLabel(entry, settings) {
     case 'decision':
       return { title: item.objet, subtitle: `Décision · ${item.date}` };
     case 'journal':
-      return { title: (item.texte || '').slice(0, 40) + ((item.texte||'').length > 40 ? '…' : ''), subtitle: `Journal · ${item.date}` };
+      return { title: noteTitle(item), subtitle: `Journal · ${item.date}` };
     case 'objectif':
       return { title: item.titre, subtitle: 'Objectif' };
     case 'lecture':
@@ -4452,7 +4580,7 @@ function SearchPanel({ settings, transactions, debts, provisions, decisions, jou
     ...debts.filter(d => match(d.name)).map(d => ({ tab: 'dettes', title: d.name, subtitle: `Dette · solde ${fmt(d.currentBalance)}` })),
     ...provisions.filter(p => match(p.name)).map(p => ({ tab: 'provisions', title: p.name, subtitle: 'Provision' })),
     ...decisions.filter(d => match(d.objet, d.note, d.pourquoi)).map(d => ({ tab: 'sagesse', title: d.objet, subtitle: `Décision · ${d.date}` })),
-    ...journal.filter(j => match(j.texte, (j.tags||[]).join(' '))).map(j => ({ tab: 'sagesse', title: (j.texte||'').slice(0,50), subtitle: `Journal · ${j.date}` })),
+    ...journal.filter(j => match(j.texte, j.titre, (j.tags||[]).join(' '))).map(j => ({ tab: 'sagesse', title: noteTitle(j), subtitle: `Journal · ${j.date}` })),
     ...objectifs.filter(o => match(o.titre, o.description)).map(o => ({ tab: 'vision', title: o.titre, subtitle: `Objectif · ${o.statut}` })),
     ...lectures.filter(l => match(l.titre, l.auteur)).map(l => ({ tab: 'croissance', title: l.titre, subtitle: `Lecture${l.auteur ? ' · '+l.auteur : ''}` })),
     ...contacts.filter(c => match(c.nom, c.notes)).map(c => ({ tab: 'relations', title: c.nom, subtitle: 'Contact' })),
