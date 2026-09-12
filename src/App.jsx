@@ -113,7 +113,7 @@ function defaultSettings() {
     { id: uid(), name: 'Famille' }, { id: uid(), name: 'Amis' }, { id: uid(), name: 'Mentors' },
     { id: uid(), name: 'Disciples' }, { id: uid(), name: 'Autre' },
   ];
-  return { groups: g, categories: cats, donTypes, comptes, disciplines, timeCategories, healthMetrics, growthHabits, relationCategories, objectifZero: false, disabledCapitals: [], disabledModules: [], currency: 'FCFA', exchangeRates: { ...DEFAULT_EXCHANGE_RATES }, theme: 'system' };
+  return { groups: g, categories: cats, donTypes, comptes, disciplines, timeCategories, healthMetrics, growthHabits, relationCategories, objectifZero: false, disabledCapitals: ['temporel', 'physique', 'intellectuel', 'relationnel'], disabledModules: [], currency: 'FCFA', exchangeRates: { ...DEFAULT_EXCHANGE_RATES }, theme: 'system' };
 }
 
 // ---------- shared UI ----------
