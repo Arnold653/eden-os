@@ -1991,11 +1991,21 @@ function notePreview(j) {
   const hasTitre = j.titre && j.titre.trim();
   const lines = t.split('\n');
   const body = hasTitre ? t : lines.slice(1).join(' ').trim();
-  const preview = (body || (hasTitre ? '' : lines[0]) || '').replace(/\s+/g, ' ').trim();
+  const preview = body.replace(/\s+/g, ' ').trim();
   return preview.length > 90 ? preview.slice(0, 90) + '…' : preview;
 }
 function isNoteEmpty(j) {
   return !j.titre?.trim() && !j.texte?.trim() && (!j.tags || j.tags.length === 0);
+}
+const NOTE_TAG_COLORS = [C.purple, C.terracotta, C.gold, C.green, C.navy];
+function tagColor(tag) {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+  return NOTE_TAG_COLORS[Math.abs(hash) % NOTE_TAG_COLORS.length];
+}
+function formatNoteDate(d) {
+  try { return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); }
+  catch (e) { return d; }
 }
 
 function JournalNotes({ journal, saveJournal, onTrash }) {
@@ -2038,33 +2048,37 @@ function JournalNotes({ journal, saveJournal, onTrash }) {
   return (
     <div>
       <button onClick={createNote} style={{
-        display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '12px 14px', marginBottom: 16,
-        borderRadius: 10, border: `1.5px dashed ${C.line}`, background: 'transparent', color: C.fade,
-        fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '13px 14px', marginBottom: 16,
+        borderRadius: 12, border: 'none', background: C.navy, color: '#fff',
+        fontSize: 13.5, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.14)',
       }}>
         <Plus size={16} /> Nouvelle note
       </button>
 
       {sorted.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Le journal est vide. Ta première note n'attend qu'à être écrite.</p>}
 
-      <div style={{ display: 'grid' }}>
-        {sorted.map(j => (
-          <div key={j.id} onClick={() => setOpenId(j.id)} style={{
-            display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 6px', cursor: 'pointer',
-            borderBottom: `1px solid ${C.line}`,
-          }}>
-            <FileText size={16} color={C.fade} style={{ marginTop: 3, flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{noteTitle(j)}</div>
-              {notePreview(j) && <div style={{ fontSize: 12, color: C.fade, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notePreview(j)}</div>}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10.5, color: C.fade }}>{j.date}</span>
-                {(j.tags || []).slice(0, 3).map((t, i) => <Pill key={i} color={C.purple}>{t}</Pill>)}
+      <div style={{ display: 'grid', gap: 10 }}>
+        {sorted.map(j => {
+          const accent = (j.tags && j.tags[0]) ? tagColor(j.tags[0]) : C.line;
+          return (
+            <div key={j.id} onClick={() => setOpenId(j.id)} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 14px 14px 13px', cursor: 'pointer',
+              background: C.surface, borderRadius: 12, border: `1px solid ${C.line}`, borderLeft: `3px solid ${accent}`,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            }}>
+              <FileText size={16} color={C.fade} style={{ marginTop: 3, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: C.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{noteTitle(j)}</div>
+                {notePreview(j) && <div style={{ fontSize: 12, color: C.fade, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notePreview(j)}</div>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10.5, color: C.fade }}>{formatNoteDate(j.date)}</span>
+                  {(j.tags || []).slice(0, 3).map((t, i) => <Pill key={i} color={tagColor(t)}>{t}</Pill>)}
+                </div>
               </div>
+              <IconBtn onClick={e => { e.stopPropagation(); deleteNote(j.id); }}><Trash2 size={14} /></IconBtn>
             </div>
-            <IconBtn onClick={e => { e.stopPropagation(); deleteNote(j.id); }}><Trash2 size={14} /></IconBtn>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -2113,7 +2127,7 @@ function NoteEditor({ note, onChange, onClose, onDelete }) {
         borderBottom: `1px solid ${C.line}`, background: C.bg, position: 'sticky', top: 0, zIndex: 1,
       }}>
         <IconBtn onClick={handleClose}><ChevronLeft size={20} /></IconBtn>
-        <span style={{ fontSize: 11, color: C.fade }}>{note.date}</span>
+        <span style={{ fontSize: 11, color: C.fade }}>{formatNoteDate(note.date)}</span>
         <IconBtn onClick={onDelete}><Trash2 size={17} /></IconBtn>
       </div>
 
