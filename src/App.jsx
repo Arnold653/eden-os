@@ -56,6 +56,9 @@ function todayISO() { return new Date().toISOString().slice(0, 10); }
 function inMonth(dateStr, m, y) { const d = new Date(dateStr); return d.getMonth() === m && d.getFullYear() === y; }
 function addMonths(dateStr, n) { const d = new Date(dateStr); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 10); }
 const FRUIT_TAGS = ['Rien', 'Confort', 'Apprentissage', 'Relation', 'Revenu', 'Ministère', 'Santé'];
+function findCategoryByKeywords(categories, keywords) {
+  return categories.find(c => keywords.some(k => c.name.toLowerCase().includes(k))) || null;
+}
 
 function defaultSettings() {
   const g = [
@@ -925,6 +928,7 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
   const [editingId, setEditingId] = useState(null);
   const [suggestion, setSuggestion] = useState(null);
   const [doneActions, setDoneActions] = useState({});
+  const [isImprevu, setIsImprevu] = useState(false);
 
   useEffect(() => { if (!settings.categories.find(c => c.id === categoryId)) setCategoryId(settings.categories[0]?.id || ''); }, [settings.categories]);
   useEffect(() => { if (!settings.comptes.find(c => c.id === compteId)) setCompteId(settings.comptes[0]?.id || ''); }, [settings.comptes]);
@@ -933,7 +937,7 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
   const groupById = Object.fromEntries(settings.groups.map(g => [g.id, g]));
   const compteById = Object.fromEntries(settings.comptes.map(c => [c.id, c]));
 
-  function resetForm() { setEditingId(null); setAmount(''); setNote(''); setSource(''); }
+  function resetForm() { setEditingId(null); setAmount(''); setNote(''); setSource(''); setIsImprevu(false); }
   function submit() {
     if (!amount) return;
     if (kind === 'revenu' && !source) return;
@@ -945,12 +949,27 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
       addTransaction(payload);
       if (kind === 'revenu') {
         const montant = Number(amount);
-        const dime = Math.round(montant * 0.10 / 5) * 5;
-        const epargne = Math.round(montant * 0.10 / 5) * 5;
-        const dettesActives = (debts||[]).filter(d => d.currentBalance > 0).sort((a,b) => a.currentBalance - b.currentBalance);
-        const detteDue = Math.min(dettesActives.reduce((s,d) => s + d.monthlyPayment, 0), montant - dime - epargne > 0 ? montant - dime - epargne : 0);
-        const reste = Math.max(0, montant - dime - epargne - detteDue);
-        setSuggestion({ montant, dime, epargne, detteDue, reste, dettePrioritaire: dettesActives[0] || null, provisionCible: (provisions||[])[0] || null });
+        if (isImprevu) {
+          const dime = Math.round(montant * 0.10 / 5) * 5;
+          const epargne = Math.round(montant * 0.30 / 5) * 5;
+          const investir = Math.round(montant * 0.30 / 5) * 5;
+          const plaisir = Math.max(0, montant - dime - epargne - investir);
+          const investCat = findCategoryByKeywords(settings.categories, ['investissement']);
+          const plaisirCat = findCategoryByKeywords(settings.categories, ['plaisir', 'loisir']);
+          setSuggestion({
+            kind: 'imprevu', montant, dime, epargne, investir, plaisir,
+            provisionCible: (provisions||[])[0] || null,
+            investCategoryId: investCat?.id || settings.categories[0]?.id || '',
+            plaisirCategoryId: plaisirCat?.id || settings.categories[0]?.id || '',
+          });
+        } else {
+          const dime = Math.round(montant * 0.10 / 5) * 5;
+          const epargne = Math.round(montant * 0.10 / 5) * 5;
+          const dettesActives = (debts||[]).filter(d => d.currentBalance > 0).sort((a,b) => a.currentBalance - b.currentBalance);
+          const detteDue = Math.min(dettesActives.reduce((s,d) => s + d.monthlyPayment, 0), montant - dime - epargne > 0 ? montant - dime - epargne : 0);
+          const reste = Math.max(0, montant - dime - epargne - detteDue);
+          setSuggestion({ kind: 'normal', montant, dime, epargne, detteDue, reste, dettePrioritaire: dettesActives[0] || null, provisionCible: (provisions||[])[0] || null });
+        }
         setDoneActions({});
       }
     }
@@ -971,6 +990,19 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
     if (!suggestion.dettePrioritaire) return;
     saveDebts(debts.map(d => d.id === suggestion.dettePrioritaire.id ? { ...d, currentBalance: Math.max(0, d.currentBalance - suggestion.detteDue) } : d));
     setDoneActions({ ...doneActions, dette: true });
+  }
+  function enregistrerInvestirImprevu() {
+    if (!suggestion.investCategoryId) return;
+    addTransaction({ type: 'depense', categoryId: suggestion.investCategoryId, compteId, amount: suggestion.investir, date: todayISO(), note: 'Investir (revenu imprévu)' });
+    setDoneActions({ ...doneActions, investir: true });
+  }
+  function enregistrerPlaisirImprevu() {
+    if (!suggestion.plaisirCategoryId) return;
+    addTransaction({ type: 'depense', categoryId: suggestion.plaisirCategoryId, compteId, amount: suggestion.plaisir, date: todayISO(), note: 'Plaisir personnel (revenu imprévu)' });
+    setDoneActions({ ...doneActions, plaisir: true });
+  }
+  function setSuggestionCategory(field, value) {
+    setSuggestion(prev => prev ? { ...prev, [field]: value } : prev);
   }
   function startEdit(t) {
     setEditingId(t.id); setKind(t.type); setCategoryId(t.categoryId || settings.categories[0]?.id || '');
@@ -1004,6 +1036,12 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
           ) : (
             <TextInput placeholder="Source (ex: Salaire, Ventes Chariow)" value={source} onChange={e => setSource(e.target.value)} />
           )}
+          {kind === 'revenu' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: C.ink, cursor: 'pointer' }}>
+              <input type="checkbox" checked={isImprevu} onChange={e => setIsImprevu(e.target.checked)} />
+              Revenu imprévu (bonus, cadeau, vente ponctuelle…)
+            </label>
+          )}
           <Select value={compteId} onChange={e => setCompteId(e.target.value)}>
             {settings.comptes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
@@ -1024,7 +1062,7 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
         </div>
       </Card>
 
-      {suggestion && kind === 'revenu' && (
+      {suggestion && kind === 'revenu' && suggestion.kind === 'normal' && (
         <Card style={{ marginBottom: 14, border: `1px solid ${C.gold}`, background: C.cream }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: C.heading }}>Comment gérer ce revenu de {fmt(suggestion.montant)} ?</span>
@@ -1051,6 +1089,45 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
             </div>
           </div>
           <div style={{ fontSize: 10, color: C.fade, marginTop: 8, fontStyle: 'italic' }}>Suggestion indicative, fondée sur des principes de gestion fidèle (dîme, provision, désendettement) — à toi d'ajuster selon ta situation.</div>
+        </Card>
+      )}
+
+      {suggestion && kind === 'revenu' && suggestion.kind === 'imprevu' && (
+        <Card style={{ marginBottom: 14, border: `1px solid ${C.gold}`, background: C.cream }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.heading }}>Revenu imprévu de {fmt(suggestion.montant)} — comment le répartir ?</span>
+            <IconBtn onClick={() => setSuggestion(null)}><X size={15} /></IconBtn>
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div><div style={{ fontSize: 12.5, fontWeight: 700 }}>Dîme (10%)</div><div style={{ fontSize: 11, color: C.fade }}>{fmt(suggestion.dime)}</div></div>
+              {doneActions.dime ? <Pill color={C.green}>Enregistré ✓</Pill> : <button onClick={enregistrerDime} style={{ background: C.gold, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Enregistrer</button>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div><div style={{ fontSize: 12.5, fontWeight: 700 }}>Épargne (30%)</div><div style={{ fontSize: 11, color: C.fade }}>{fmt(suggestion.epargne)}{suggestion.provisionCible ? ` · vers « ${suggestion.provisionCible.name} »` : ''}</div></div>
+              {!suggestion.provisionCible ? <span style={{ fontSize: 10, color: C.fade }}>Aucune provision créée</span> : doneActions.epargne ? <Pill color={C.green}>Fait ✓</Pill> : <button onClick={cotiserProvision} style={{ background: C.purple, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cotiser</button>}
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div><div style={{ fontSize: 12.5, fontWeight: 700 }}>Investir (30%)</div><div style={{ fontSize: 11, color: C.fade }}>{fmt(suggestion.investir)}</div></div>
+                {doneActions.investir ? <Pill color={C.green}>Enregistré ✓</Pill> : <button onClick={enregistrerInvestirImprevu} style={{ background: C.navy, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Enregistrer</button>}
+              </div>
+              <div style={{ fontSize: 9.5, color: C.fade, marginTop: 2 }}>Transfert au ciel, formation, outils/livres, marchés ou projets</div>
+              <Select value={suggestion.investCategoryId} onChange={e => setSuggestionCategory('investCategoryId', e.target.value)} style={{ marginTop: 4 }}>
+                {settings.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div><div style={{ fontSize: 12.5, fontWeight: 700 }}>Plaisir personnel (30%)</div><div style={{ fontSize: 11, color: C.fade }}>{fmt(suggestion.plaisir)}</div></div>
+                {doneActions.plaisir ? <Pill color={C.green}>Enregistré ✓</Pill> : <button onClick={enregistrerPlaisirImprevu} style={{ background: C.terracotta, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Enregistrer</button>}
+              </div>
+              <Select value={suggestion.plaisirCategoryId} onChange={e => setSuggestionCategory('plaisirCategoryId', e.target.value)} style={{ marginTop: 4 }}>
+                {settings.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: C.fade, marginTop: 8, fontStyle: 'italic' }}>Répartition indicative pour un revenu imprévu (dîme, épargne, investissement, plaisir) — ajuste les catégories si besoin.</div>
         </Card>
       )}
 
