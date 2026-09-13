@@ -57,6 +57,22 @@ function inMonth(dateStr, m, y) { const d = new Date(dateStr); return d.getMonth
 function addMonths(dateStr, n) { const d = new Date(dateStr); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 10); }
 const FRUIT_TAGS = ['Rien', 'Confort', 'Apprentissage', 'Relation', 'Revenu', 'Ministère', 'Santé'];
 const CATEGORIES_PRIERE = ['Famille', 'Église / Ministère', 'Travail / Finances', 'Santé', 'Nation', 'Autre'];
+const BIBLE_BOOKS = [
+  ['Ancien Testament', [
+    ['Genèse',50],['Exode',40],['Lévitique',27],['Nombres',36],['Deutéronome',34],['Josué',24],['Juges',21],['Ruth',4],
+    ['1 Samuel',31],['2 Samuel',24],['1 Rois',22],['2 Rois',25],['1 Chroniques',29],['2 Chroniques',36],['Esdras',10],['Néhémie',13],
+    ['Esther',10],['Job',42],['Psaumes',150],['Proverbes',31],['Ecclésiaste',12],['Cantique des Cantiques',8],['Ésaïe',66],['Jérémie',52],
+    ['Lamentations',5],['Ézéchiel',48],['Daniel',12],['Osée',14],['Joël',3],['Amos',9],['Abdias',1],['Jonas',4],
+    ['Michée',7],['Nahum',3],['Habacuc',3],['Sophonie',3],['Aggée',2],['Zacharie',14],['Malachie',4],
+  ]],
+  ['Nouveau Testament', [
+    ['Matthieu',28],['Marc',16],['Luc',24],['Jean',21],['Actes',28],['Romains',16],['1 Corinthiens',16],['2 Corinthiens',13],
+    ['Galates',6],['Éphésiens',6],['Philippiens',4],['Colossiens',4],['1 Thessaloniciens',5],['2 Thessaloniciens',3],['1 Timothée',6],['2 Timothée',4],
+    ['Tite',3],['Philémon',1],['Hébreux',13],['Jacques',5],['1 Pierre',5],['2 Pierre',3],['1 Jean',5],['2 Jean',1],
+    ['3 Jean',1],['Jude',1],['Apocalypse',22],
+  ]],
+];
+const BIBLE_TOTAL_CHAPTERS = BIBLE_BOOKS.reduce((s,[,books]) => s + books.reduce((s2,[,n]) => s2+n, 0), 0);
 function findCategoryByKeywords(categories, keywords) {
   return categories.find(c => keywords.some(k => c.name.toLowerCase().includes(k))) || null;
 }
@@ -1191,7 +1207,7 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
 }
 
 // ---------- Royaume (Dons + Disciplines) ----------
-function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction, duplicateTransaction, deleteTransaction, year, disciplineLogs, saveDisciplineLogs, disciplineSubjects, saveDisciplineSubjects }) {
+function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction, duplicateTransaction, deleteTransaction, year, disciplineLogs, saveDisciplineLogs, disciplineSubjects, saveDisciplineSubjects, bibleProgress, saveBibleProgress }) {
   const [subview, setSubview] = useState('dons');
   const [donTypeId, setDonTypeId] = useState(settings.donTypes[0]?.id || '');
   const [beneficiary, setBeneficiary] = useState('');
@@ -1360,7 +1376,10 @@ function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction,
                       {entryType === 'sujets' && (
                         <SujetsManager discipline={d} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} />
                       )}
-                      {entryType === 'notes' && (
+                      {entryType === 'notes' && /bible|biblique/i.test(d.name) && (
+                        <BibleReader discipline={d} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} />
+                      )}
+                      {entryType === 'notes' && !/bible|biblique/i.test(d.name) && (
                         <NotesJournal discipline={d} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} />
                       )}
                     </div>
@@ -1593,6 +1612,107 @@ function NotesJournal({ discipline, disciplineLogs, saveDisciplineLogs }) {
         <div style={{ textAlign: 'center', padding: '14px 0 4px', color: C.fade }}>
           <BookOpen size={20} style={{ opacity: 0.4, marginBottom: 4 }} />
           <div style={{ fontSize: 11 }}>Aucune note enregistrée pour l'instant.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Lecture biblique : vraie appli de lecture (parcours des 66 livres) ----------
+function BibleReader({ discipline, disciplineLogs, saveDisciplineLogs, bibleProgress, saveBibleProgress }) {
+  const allBooks = BIBLE_BOOKS.flatMap(([, books]) => books.map(([name, chapters]) => ({ name, chapters })));
+  const [selectedBook, setSelectedBook] = useState(allBooks[0].name);
+  const [note, setNote] = useState('');
+  const [showHist, setShowHist] = useState(false);
+
+  const mine = disciplineLogs.filter(l => l.disciplineId === discipline.id).sort((a,b) => new Date(b.date) - new Date(a.date));
+  const avecNote = mine.filter(l => l.note);
+
+  const totalRead = Object.values(bibleProgress).reduce((s, chs) => s + Object.keys(chs || {}).length, 0);
+  const progressGlobal = BIBLE_TOTAL_CHAPTERS > 0 ? totalRead / BIBLE_TOTAL_CHAPTERS : 0;
+
+  const bookInfo = allBooks.find(b => b.name === selectedBook) || allBooks[0];
+  const readSet = bibleProgress[selectedBook] || {};
+  const readCountBook = Object.keys(readSet).length;
+
+  function markChapter(chNum) {
+    if (readSet[chNum]) return;
+    saveBibleProgress({ ...bibleProgress, [selectedBook]: { ...readSet, [chNum]: todayISO() } });
+    saveDisciplineLogs([{ id: uid(), disciplineId: discipline.id, date: todayISO(), value: 1, note: '' }, ...disciplineLogs]);
+  }
+  function addNote() {
+    if (!note.trim()) return;
+    saveDisciplineLogs([{ id: uid(), disciplineId: discipline.id, date: todayISO(), value: 0, note: note.trim() }, ...disciplineLogs]);
+    setNote('');
+  }
+  function removeEntry(id) {
+    saveDisciplineLogs(disciplineLogs.filter(l => l.id !== id));
+  }
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.fade, marginBottom: 3 }}>
+          <span>Parcours de toute la Bible</span>
+          <span>{totalRead} / {BIBLE_TOTAL_CHAPTERS} chapitres ({pct(progressGlobal)})</span>
+        </div>
+        <div style={{ height: 6, borderRadius: 3, background: C.line, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${progressGlobal * 100}%`, background: C.purple }} />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <Select value={selectedBook} onChange={e => setSelectedBook(e.target.value)} style={{ flex: 1 }}>
+          {BIBLE_BOOKS.map(([testament, books]) => (
+            <optgroup key={testament} label={testament}>
+              {books.map(([name]) => <option key={name} value={name}>{name}</option>)}
+            </optgroup>
+          ))}
+        </Select>
+        <span style={{ fontSize: 11, color: C.fade, whiteSpace: 'nowrap', flexShrink: 0 }}>{readCountBook} / {bookInfo.chapters}</span>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
+        {Array.from({ length: bookInfo.chapters }, (_, i) => i + 1).map(ch => {
+          const done = !!readSet[ch];
+          return (
+            <button key={ch} onClick={() => markChapter(ch)} disabled={done} style={{
+              width: 30, height: 30, borderRadius: 6, border: `1px solid ${done ? C.purple : C.line}`,
+              background: done ? C.purple : '#fff', color: done ? '#fff' : C.ink,
+              fontSize: 11, fontWeight: 700, cursor: done ? 'default' : 'pointer', flexShrink: 0,
+            }}>{ch}</button>
+          );
+        })}
+      </div>
+      <p style={{ fontSize: 10.5, color: C.fade, marginTop: 0, marginBottom: 14 }}>Touche un chapitre pour le marquer comme lu.</p>
+
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, color: C.fade, marginBottom: 3 }}>Réflexion du jour (optionnel)</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <TextInput placeholder="Passage, réflexion, ce qui a marqué…" value={note} onChange={e => setNote(e.target.value)} style={{ flex: 1 }} />
+          <MicButton onResult={t => setNote(v => v ? v + ' ' + t : t)} />
+          <button onClick={addNote} disabled={!note.trim()} style={{ background: C.purple, color: '#fff', border: 'none', borderRadius: 8, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: note.trim() ? 'pointer' : 'default', opacity: note.trim() ? 1 : 0.5 }}>+</button>
+        </div>
+      </div>
+
+      {avecNote.length > 0 && (
+        <button onClick={() => setShowHist(!showHist)} style={{ marginTop: 4, background: 'none', border: `1px solid ${C.line}`, color: C.fade, borderRadius: 8, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer', width: '100%' }}>
+          {showHist ? '▾ Masquer les notes passées' : `▸ Voir les notes passées (${avecNote.length})`}
+        </button>
+      )}
+      {showHist && avecNote.map(l => (
+        <div key={l.id} style={{ padding: '7px 0', borderBottom: `1px solid ${C.line}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+          <div>
+            <div style={{ fontSize: 10, color: C.fade }}>{l.date}</div>
+            <div style={{ fontSize: 13 }}>{l.note}</div>
+          </div>
+          <IconBtn onClick={() => removeEntry(l.id)}><Trash2 size={13} /></IconBtn>
+        </div>
+      ))}
+      {avecNote.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '14px 0 4px', color: C.fade }}>
+          <BookOpen size={20} style={{ opacity: 0.4, marginBottom: 4 }} />
+          <div style={{ fontSize: 11 }}>Aucune réflexion enregistrée pour l'instant.</div>
         </div>
       )}
     </div>
@@ -4952,6 +5072,7 @@ export default function App() {
   const [growthLogs, setGrowthLogs] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [disciplineSubjects, setDisciplineSubjects] = useState([]);
+  const [bibleProgress, setBibleProgress] = useState({});
   const [relationLogs, setRelationLogs] = useState([]);
   const [trash, setTrash] = useState([]);
   const [tab, setTabRaw] = useState(() => {
@@ -5053,6 +5174,7 @@ export default function App() {
       try { const gl = await window.storage.get('growthLogs'); setGrowthLogs(gl ? JSON.parse(gl.value) : []); } catch (e) { setGrowthLogs([]); }
       try { const ct = await window.storage.get('contacts'); setContacts(ct ? JSON.parse(ct.value) : []); } catch (e) { setContacts([]); }
       try { const ds = await window.storage.get('disciplineSubjects'); setDisciplineSubjects(ds ? JSON.parse(ds.value) : []); } catch (e) { setDisciplineSubjects([]); }
+      try { const bp = await window.storage.get('bibleProgress'); setBibleProgress(bp ? JSON.parse(bp.value) : {}); } catch (e) { setBibleProgress({}); }
       try { const rl = await window.storage.get('relationLogs'); setRelationLogs(rl ? JSON.parse(rl.value) : []); } catch (e) { setRelationLogs([]); }
       try {
         const tr = await window.storage.get('trash');
@@ -5076,7 +5198,7 @@ export default function App() {
       version: 1, exportedAt: new Date().toISOString(),
       settings, transactions, debts, provisions, decisions, journal, disciplineLogs, visionDoc,
       objectifs, revues, timeLogs, healthLogs, poidsLogs, manualScores, lectures, lectureLogs,
-      growthLogs, contacts, disciplineSubjects, relationLogs, trash,
+      growthLogs, contacts, disciplineSubjects, relationLogs, trash, bibleProgress,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -5099,6 +5221,7 @@ export default function App() {
         objectifs: setObjectifs, revues: setRevues, timeLogs: setTimeLogs, healthLogs: setHealthLogs,
         poidsLogs: setPoidsLogs, manualScores: setManualScores, lectures: setLectures, lectureLogs: setLectureLogs,
         growthLogs: setGrowthLogs, contacts: setContacts, disciplineSubjects: setDisciplineSubjects, relationLogs: setRelationLogs, trash: setTrash,
+        bibleProgress: setBibleProgress,
       };
       for (const key of Object.keys(setters)) {
         if (data[key] !== undefined) {
@@ -5183,6 +5306,10 @@ export default function App() {
   async function saveDisciplineSubjects(next) {
     setDisciplineSubjects(next);
     try { await window.storage.set('disciplineSubjects', JSON.stringify(next)); } catch (e) { console.error(e); }
+  }
+  async function saveBibleProgress(next) {
+    setBibleProgress(next);
+    try { await window.storage.set('bibleProgress', JSON.stringify(next)); } catch (e) { console.error(e); }
   }
   async function saveRelationLogs(next) {
     setRelationLogs(next);
@@ -5321,7 +5448,7 @@ export default function App() {
         <div style={{ padding: '16px 16px 8px' }}>
           {tab === 'dashboard' && <Dashboard revenuMois={revenuMois} donsMois={donsMois} depensesMois={depensesMois} soldeMois={soldeMois} tauxDime={tauxDime} pieData={pieData} last6={last6} comptesSoldes={comptesSoldes} objectifZero={settings.objectifZero} indice={indiceGlobal} settings={settings} transactions={transactions} debts={debts} timeLogs={timeLogs} healthLogs={healthLogs} disciplineLogs={disciplineLogs} decisions={decisions} objectifs={objectifs} revues={revues} provisions={provisions} lectures={lectures} lectureLogs={lectureLogs} growthLogs={growthLogs} monthIdx={monthIdx} year={year} />}
           {tab === 'transactions' && <TransactionsTab settings={settings} monthTx={monthTx} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} groupTotals={groupTotals} debts={debts} saveDebts={saveDebts} provisions={provisions} saveProvisions={saveProvisions} />}
-          {tab === 'royaume' && <RoyaumeTab settings={settings} transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} year={year} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} />}
+          {tab === 'royaume' && <RoyaumeTab settings={settings} transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} year={year} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} />}
           {tab === 'provisions' && <ProvisionsTab settings={settings} provisions={provisions} saveProvisions={saveProvisions} monthIdx={monthIdx} onTrash={moveToTrash} />}
           {tab === 'dettes' && <DettesTab settings={settings} debts={debts} saveDebts={saveDebts} onTrash={moveToTrash} />}
           {tab === 'sagesse' && <SagesseTab decisions={decisions} saveDecisions={saveDecisions} journal={journal} saveJournal={saveJournal} onTrash={moveToTrash} />}
