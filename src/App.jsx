@@ -1734,17 +1734,25 @@ function ProvisionsTab({ settings, provisions, saveProvisions, monthIdx, onTrash
 
         return (
           <>
-            <SectionTitle sub="Les charges annuelles à lisser mois après mois.">Charges récurrentes</SectionTitle>
-            <div style={{ display: 'grid', gap: 10, marginBottom: 22 }}>
-              {chargesRecurrentes.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucune charge récurrente créée pour l'instant.</p>}
-              {chargesRecurrentes.map(renderCharge)}
-            </div>
+            {type === 'recurrent' && (
+              <>
+                <SectionTitle sub="Les charges annuelles à lisser mois après mois.">Charges récurrentes</SectionTitle>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {chargesRecurrentes.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucune charge récurrente créée pour l'instant.</p>}
+                  {chargesRecurrentes.map(renderCharge)}
+                </div>
+              </>
+            )}
 
-            <SectionTitle sub="Les projets de vie que tu finances par cotisation régulière.">Projets / Objectifs</SectionTitle>
-            <div style={{ display: 'grid', gap: 10 }}>
-              {projets.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucun projet créé pour l'instant.</p>}
-              {projets.map(renderProjet)}
-            </div>
+            {type === 'projet' && (
+              <>
+                <SectionTitle sub="Les projets de vie que tu finances par cotisation régulière.">Projets / Objectifs</SectionTitle>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {projets.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucun projet créé pour l'instant.</p>}
+                  {projets.map(renderProjet)}
+                </div>
+              </>
+            )}
           </>
         );
       })()}
