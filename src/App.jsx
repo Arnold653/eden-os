@@ -2093,7 +2093,7 @@ function JournalNotes({ journal, saveJournal, onTrash }) {
                 <div key={j.id} onClick={() => setOpenId(j.id)} style={{
                   display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 14px 14px 13px', cursor: 'pointer',
                   background: C.surface, borderRadius: 12, border: `1px solid ${C.line}`, borderLeft: `3px solid ${accent}`,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)', minWidth: 0,
                 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, marginTop: 2 }}>
                     <FileText size={16} color={C.fade} />
@@ -2134,9 +2134,9 @@ function JournalNotes({ journal, saveJournal, onTrash }) {
                     .map(j => (
                       <div key={j.id} onClick={() => setOpenId(j.id)} style={{
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer',
-                        background: C.surface, borderRadius: 8,
+                        background: C.surface, borderRadius: 8, minWidth: 0,
                       }}>
-                        <span style={{ fontSize: 12.5, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <span style={{ fontSize: 12.5, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
                           {j.numero && <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.fade, marginRight: 6 }}>N°{j.numero}</span>}
                           {noteTitle(j)}
                         </span>
