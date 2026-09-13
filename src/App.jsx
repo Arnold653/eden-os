@@ -5199,7 +5199,7 @@ export default function App() {
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ maxWidth: 460, margin: '0 auto', minHeight: '100vh', background: C.surface, boxShadow: '0 0 30px rgba(0,0,0,0.08)', position: 'relative', paddingBottom: 76 }}>
+      <div className="eden-shell" style={{ margin: '0 auto', minHeight: '100vh', background: C.surface, boxShadow: '0 0 30px rgba(0,0,0,0.08)', position: 'relative', paddingBottom: 76 }}>
         {savePending > 0 && (
           <div style={{
             position: 'sticky', top: 0, zIndex: 50, background: C.gold, color: '#fff',
