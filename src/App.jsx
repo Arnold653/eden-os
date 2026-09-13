@@ -56,6 +56,7 @@ function todayISO() { return new Date().toISOString().slice(0, 10); }
 function inMonth(dateStr, m, y) { const d = new Date(dateStr); return d.getMonth() === m && d.getFullYear() === y; }
 function addMonths(dateStr, n) { const d = new Date(dateStr); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 10); }
 const FRUIT_TAGS = ['Rien', 'Confort', 'Apprentissage', 'Relation', 'Revenu', 'Ministère', 'Santé'];
+const CATEGORIES_PRIERE = ['Famille', 'Église / Ministère', 'Travail / Finances', 'Santé', 'Nation', 'Autre'];
 function findCategoryByKeywords(categories, keywords) {
   return categories.find(c => keywords.some(k => c.name.toLowerCase().includes(k))) || null;
 }
@@ -1357,14 +1358,7 @@ function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction,
                         </div>
                       )}
                       {entryType === 'sujets' && (
-                        <>
-                          <div style={{ fontSize: 10.5, color: C.fade, marginBottom: 4 }}>Jours de prière (régularité)</div>
-                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            <TextInput type="number" placeholder="Ex : 1" value={logValue[d.id] || ''} onChange={e => setLogValue({ ...logValue, [d.id]: e.target.value })} style={{ flex: 1 }} />
-                            <button onClick={() => logToday(d.id)} style={{ background: C.gold, color: '#fff', border: 'none', borderRadius: 8, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ Ajouter</button>
-                          </div>
-                          <SujetsManager discipline={d} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} />
-                        </>
+                        <SujetsManager discipline={d} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} />
                       )}
                       {entryType === 'notes' && (
                         <NotesJournal discipline={d} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} />
@@ -1382,10 +1376,13 @@ function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction,
   );
 }
 
-// ---------- Sujets de prière (mode "sujets") ----------
-function SujetsManager({ discipline, disciplineSubjects, saveDisciplineSubjects }) {
+// ---------- Sujets de prière (mode "sujets") : session du jour + sujets organisés par catégorie ----------
+function SujetsManager({ discipline, disciplineSubjects, saveDisciplineSubjects, disciplineLogs, saveDisciplineLogs }) {
   const [texte, setTexte] = useState('');
+  const [categorie, setCategorie] = useState(CATEGORIES_PRIERE[0]);
   const [noteDraft, setNoteDraft] = useState({});
+  const [checked, setChecked] = useState({});
+
   const mine = disciplineSubjects.filter(s => s.disciplineId === discipline.id);
   const enAttente = mine.filter(s => s.statut === 'attente').sort((a,b) => new Date(b.dateCreation) - new Date(a.dateCreation));
   const exauces = mine.filter(s => s.statut === 'exauce').sort((a,b) => new Date(b.dateReponse) - new Date(a.dateReponse));
@@ -1398,9 +1395,19 @@ function SujetsManager({ discipline, disciplineSubjects, saveDisciplineSubjects 
   const tauxTotal = (exauces.length + sansReponse.length) > 0 ? exauces.length / (exauces.length + sansReponse.length) : null;
   const tauxAnnee = (exaucesAnnee + sansReponseAnnee) > 0 ? exaucesAnnee / (exaucesAnnee + sansReponseAnnee) : null;
 
+  function groupByCat(list) {
+    const map = {};
+    CATEGORIES_PRIERE.forEach(c => map[c] = []);
+    list.forEach(s => { const c = CATEGORIES_PRIERE.includes(s.categorie) ? s.categorie : 'Autre'; map[c].push(s); });
+    return map;
+  }
+  const enAttenteByCat = groupByCat(enAttente);
+
+  const sessionsAujourdhui = disciplineLogs.filter(l => l.disciplineId === discipline.id && l.date === todayISO());
+
   function addSujet() {
     if (!texte.trim()) return;
-    saveDisciplineSubjects([{ id: uid(), disciplineId: discipline.id, texte: texte.trim(), statut: 'attente', dateCreation: todayISO(), dateReponse: null, note: '' }, ...disciplineSubjects]);
+    saveDisciplineSubjects([{ id: uid(), disciplineId: discipline.id, texte: texte.trim(), categorie, statut: 'attente', dateCreation: todayISO(), dateReponse: null, note: '' }, ...disciplineSubjects]);
     setTexte('');
   }
   function setStatut(id, statut) {
@@ -1415,9 +1422,41 @@ function SujetsManager({ discipline, disciplineSubjects, saveDisciplineSubjects 
   function removeSujet(id) {
     saveDisciplineSubjects(disciplineSubjects.filter(s => s.id !== id));
   }
+  function toggleChecked(id) {
+    setChecked(prev => ({ ...prev, [id]: !prev[id] }));
+  }
+  function enregistrerSession() {
+    const ids = Object.keys(checked).filter(id => checked[id]);
+    saveDisciplineLogs([{ id: uid(), disciplineId: discipline.id, date: todayISO(), value: 1, sujetsIds: ids }, ...disciplineLogs]);
+    setChecked({});
+  }
+  const nChecked = Object.values(checked).filter(Boolean).length;
 
   return (
     <div style={{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.heading, marginBottom: 6 }}>
+        Session de prière du jour {sessionsAujourdhui.length > 0 && <span style={{ color: C.green, fontWeight: 400 }}> · déjà {sessionsAujourdhui.length} enregistrée{sessionsAujourdhui.length > 1 ? 's' : ''} aujourd'hui</span>}
+      </div>
+      {enAttente.length === 0 && <p style={{ fontSize: 12, color: C.fade, marginBottom: 8 }}>Aucun sujet en attente — ajoute-en un ci-dessous, ou enregistre simplement un temps de prière libre.</p>}
+      {CATEGORIES_PRIERE.map(cat => enAttenteByCat[cat].length > 0 && (
+        <div key={cat} style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+            <Pill color={tagColor(cat)}>{cat}</Pill>
+          </div>
+          {enAttenteByCat[cat].map(s => (
+            <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 2px', fontSize: 13, cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!checked[s.id]} onChange={() => toggleChecked(s.id)} />
+              <span>{s.texte}</span>
+            </label>
+          ))}
+        </div>
+      ))}
+      <button onClick={enregistrerSession} style={{
+        width: '100%', background: C.gold, color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 13, cursor: 'pointer', marginBottom: 14,
+      }}>
+        + Enregistrer la session {nChecked > 0 ? `(${nChecked} sujet${nChecked > 1 ? 's' : ''})` : '(prière libre)'}
+      </button>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
         <Card style={{ padding: 8 }}>
           <div style={{ fontSize: 10, color: C.fade }}>Taux d'exaucement (cumul)</div>
@@ -1433,22 +1472,30 @@ function SujetsManager({ discipline, disciplineSubjects, saveDisciplineSubjects 
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
         <TextInput placeholder="Nouveau sujet de prière" value={texte} onChange={e => setTexte(e.target.value)} style={{ flex: 1 }} />
+        <Select value={categorie} onChange={e => setCategorie(e.target.value)} style={{ width: 150 }}>
+          {CATEGORIES_PRIERE.map(c => <option key={c} value={c}>{c}</option>)}
+        </Select>
         <button onClick={addSujet} disabled={!texte.trim()} style={{ background: C.gold, color: '#fff', border: 'none', borderRadius: 8, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: texte.trim() ? 'pointer' : 'default' }}>+ Ajouter</button>
       </div>
 
       {enAttente.length > 0 && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: C.heading, marginBottom: 4 }}>En attente ({enAttente.length})</div>
-          {enAttente.map(s => (
-            <div key={s.id} style={{ padding: '7px 0', borderBottom: `1px solid ${C.line}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 13 }}>{s.texte}<span style={{ color: C.fade, fontSize: 10 }}> · depuis le {s.dateCreation}</span></div>
-                <IconBtn onClick={() => removeSujet(s.id)}><Trash2 size={13} /></IconBtn>
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                <button onClick={() => setStatut(s.id, 'exauce')} style={{ background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✓ Exaucé</button>
-                <button onClick={() => setStatut(s.id, 'sans_reponse')} style={{ background: C.fade, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>Sans réponse</button>
-              </div>
+          {CATEGORIES_PRIERE.map(cat => enAttenteByCat[cat].length > 0 && (
+            <div key={cat} style={{ marginBottom: 8 }}>
+              <Pill color={tagColor(cat)}>{cat}</Pill>
+              {enAttenteByCat[cat].map(s => (
+                <div key={s.id} style={{ padding: '7px 0', borderBottom: `1px solid ${C.line}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontSize: 13 }}>{s.texte}<span style={{ color: C.fade, fontSize: 10 }}> · depuis le {s.dateCreation}</span></div>
+                    <IconBtn onClick={() => removeSujet(s.id)}><Trash2 size={13} /></IconBtn>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                    <button onClick={() => setStatut(s.id, 'exauce')} style={{ background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✓ Exaucé</button>
+                    <button onClick={() => setStatut(s.id, 'sans_reponse')} style={{ background: C.fade, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>Sans réponse</button>
+                  </div>
+                </div>
+              ))}
             </div>
           ))}
         </div>
