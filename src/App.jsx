@@ -929,20 +929,28 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
   const [suggestion, setSuggestion] = useState(null);
   const [doneActions, setDoneActions] = useState({});
   const [isImprevu, setIsImprevu] = useState(false);
+  const [donTypeId, setDonTypeId] = useState(settings.donTypes[0]?.id || '');
+  const [beneficiary, setBeneficiary] = useState('');
+  const [receipt, setReceipt] = useState(false);
 
   useEffect(() => { if (!settings.categories.find(c => c.id === categoryId)) setCategoryId(settings.categories[0]?.id || ''); }, [settings.categories]);
   useEffect(() => { if (!settings.comptes.find(c => c.id === compteId)) setCompteId(settings.comptes[0]?.id || ''); }, [settings.comptes]);
+  useEffect(() => { if (!settings.donTypes.find(d => d.id === donTypeId)) setDonTypeId(settings.donTypes[0]?.id || ''); }, [settings.donTypes]);
 
   const catById = Object.fromEntries(settings.categories.map(c => [c.id, c]));
   const groupById = Object.fromEntries(settings.groups.map(g => [g.id, g]));
   const compteById = Object.fromEntries(settings.comptes.map(c => [c.id, c]));
+  const typeById = Object.fromEntries(settings.donTypes.map(d => [d.id, d]));
 
-  function resetForm() { setEditingId(null); setAmount(''); setNote(''); setSource(''); setIsImprevu(false); }
+  function resetForm() { setEditingId(null); setAmount(''); setNote(''); setSource(''); setIsImprevu(false); setBeneficiary(''); setReceipt(false); }
   function submit() {
     if (!amount) return;
     if (kind === 'revenu' && !source) return;
     if (kind === 'depense' && !categoryId) return;
-    const payload = { type: kind, categoryId: kind === 'depense' ? categoryId : undefined, source: kind === 'revenu' ? source : undefined, compteId, amount: Number(amount), date, note };
+    if (kind === 'don' && !donTypeId) return;
+    const payload = kind === 'don'
+      ? { type: 'don', donTypeId, beneficiary, compteId, amount: Number(amount), date, receipt }
+      : { type: kind, categoryId: kind === 'depense' ? categoryId : undefined, source: kind === 'revenu' ? source : undefined, compteId, amount: Number(amount), date, note };
     if (editingId) {
       updateTransaction(editingId, payload);
     } else {
@@ -1007,6 +1015,7 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
   function startEdit(t) {
     setEditingId(t.id); setKind(t.type); setCategoryId(t.categoryId || settings.categories[0]?.id || '');
     setCompteId(t.compteId || settings.comptes[0]?.id || ''); setSource(t.source || '');
+    setDonTypeId(t.donTypeId || settings.donTypes[0]?.id || ''); setBeneficiary(t.beneficiary || ''); setReceipt(!!t.receipt);
     setAmount(String(t.amount)); setDate(t.date); setNote(t.note || '');
   }
 
@@ -1015,11 +1024,11 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        {['revenu','depense'].map(k => (
+        {['revenu','depense','don'].map(k => (
           <button key={k} onClick={() => { setKind(k); resetForm(); }} style={{
             flex: 1, padding: '9px', borderRadius: 8, border: `1px solid ${C.line}`, fontWeight: 700, fontSize: 13, cursor: 'pointer',
             background: kind === k ? C.navy : '#fff', color: kind === k ? '#fff' : C.ink,
-          }}>{k === 'depense' ? 'Dépense' : 'Revenu'}</button>
+          }}>{k === 'depense' ? 'Dépense' : k === 'don' ? 'Don' : 'Revenu'}</button>
         ))}
       </div>
 
@@ -1033,6 +1042,13 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
                 </optgroup>
               ))}
             </Select>
+          ) : kind === 'don' ? (
+            <>
+              <Select value={donTypeId} onChange={e => setDonTypeId(e.target.value)}>
+                {settings.donTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </Select>
+              <TextInput placeholder="Bénéficiaire / église" value={beneficiary} onChange={e => setBeneficiary(e.target.value)} />
+            </>
           ) : (
             <TextInput placeholder="Source (ex: Salaire, Ventes Chariow)" value={source} onChange={e => setSource(e.target.value)} />
           )}
@@ -1052,6 +1068,11 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
               <TextInput placeholder="Note (optionnel)" value={note} onChange={e => setNote(e.target.value)} style={{ flex: 1 }} />
               <MicButton onResult={t => setNote(v => v ? v + ' ' + t : t)} />
             </div>
+          )}
+          {kind === 'don' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+              <input type="checkbox" checked={receipt} onChange={e => setReceipt(e.target.checked)} /> Reçu obtenu
+            </label>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
             <PrimaryButton onClick={submit} disabled={!amount} style={{ flex: 1 }}>
@@ -1148,11 +1169,15 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
         {list.map(t => (
           <Card key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{kind === 'depense' ? (catById[t.categoryId]?.name || 'Catégorie supprimée') : t.source}</div>
-              <div style={{ fontSize: 11, color: C.fade }}>{t.date} · {compteById[t.compteId]?.name || '—'}{t.note ? ' · ' + t.note : ''}</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>
+                {kind === 'depense' ? (catById[t.categoryId]?.name || 'Catégorie supprimée')
+                  : kind === 'don' ? (typeById[t.donTypeId]?.name || '—') + (t.beneficiary ? ' · ' + t.beneficiary : '')
+                  : t.source}
+              </div>
+              <div style={{ fontSize: 11, color: C.fade }}>{t.date} · {compteById[t.compteId]?.name || '—'}{t.note ? ' · ' + t.note : ''}{kind === 'don' && t.receipt ? ' · reçu ✓' : ''}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: kind === 'depense' ? C.terracotta : C.navy }}>{fmt(t.amount)}</span>
+              <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: kind === 'depense' ? C.terracotta : kind === 'don' ? C.gold : C.navy }}>{fmt(t.amount)}</span>
               <IconBtn onClick={() => startEdit(t)}><Pencil size={15} /></IconBtn>
               <IconBtn onClick={() => duplicateTransaction(t)}><Copy size={15} /></IconBtn>
               <IconBtn onClick={() => deleteTransaction(t.id)}><Trash2 size={15} /></IconBtn>
@@ -1226,26 +1251,36 @@ function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction,
 
       {subview === 'dons' && (
         <div>
-          <SectionTitle>Ajouter un don</SectionTitle>
-          <Card style={{ marginBottom: 14 }}>
-            <div style={{ display: 'grid', gap: 8 }}>
-              <Select value={donTypeId} onChange={e => setDonTypeId(e.target.value)}>
-                {settings.donTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </Select>
-              <TextInput placeholder="Bénéficiaire / église" value={beneficiary} onChange={e => setBeneficiary(e.target.value)} />
-              <TextInput type="number" placeholder={`Montant (${CURRENCIES[settings.currency||"FCFA"].symbol})`} value={amount} onChange={e => setAmount(e.target.value)} />
-              <TextInput type="date" value={date} onChange={e => setDate(e.target.value)} />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                <input type="checkbox" checked={receipt} onChange={e => setReceipt(e.target.checked)} /> Reçu obtenu
-              </label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <PrimaryButton onClick={submit} disabled={!amount} style={{ flex: 1 }}>
-                  {editingId ? <><Pencil size={15}/> Enregistrer les modifications</> : <><Plus size={15}/> Enregistrer</>}
-                </PrimaryButton>
-                {editingId && <button onClick={resetForm} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer', color: C.ink }}>Annuler</button>}
-              </div>
-            </div>
-          </Card>
+          {editingId ? (
+            <>
+              <SectionTitle>Modifier ce don</SectionTitle>
+              <Card style={{ marginBottom: 14 }}>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <Select value={donTypeId} onChange={e => setDonTypeId(e.target.value)}>
+                    {settings.donTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </Select>
+                  <TextInput placeholder="Bénéficiaire / église" value={beneficiary} onChange={e => setBeneficiary(e.target.value)} />
+                  <TextInput type="number" placeholder={`Montant (${CURRENCIES[settings.currency||"FCFA"].symbol})`} value={amount} onChange={e => setAmount(e.target.value)} />
+                  <TextInput type="date" value={date} onChange={e => setDate(e.target.value)} />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <input type="checkbox" checked={receipt} onChange={e => setReceipt(e.target.checked)} /> Reçu obtenu
+                  </label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <PrimaryButton onClick={submit} disabled={!amount} style={{ flex: 1 }}>
+                      <Pencil size={15}/> Enregistrer les modifications
+                    </PrimaryButton>
+                    <button onClick={resetForm} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer', color: C.ink }}>Annuler</button>
+                  </div>
+                </div>
+              </Card>
+            </>
+          ) : (
+            <Card style={{ marginBottom: 14, background: C.cream, border: `1px dashed ${C.line}` }}>
+              <p style={{ fontSize: 12.5, color: C.ink, margin: 0 }}>
+                Pour enregistrer un nouveau don, utilise l'onglet <strong>Don</strong> dans <strong>Mouvements</strong>. Tu retrouves ici le récapitulatif annuel et l'historique.
+              </p>
+            </Card>
+          )}
 
           <SectionTitle>Récapitulatif {year}</SectionTitle>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
