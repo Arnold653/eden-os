@@ -1647,48 +1647,11 @@ function ProvisionsTab({ settings, provisions, saveProvisions, monthIdx, onTrash
         </div>
       </Card>
 
-      <div style={{ display: 'grid', gap: 10 }}>
-        {provisions.map(p => {
-          if (p.type === 'projet') {
-            const remaining = monthsRemainingUntil(p.targetDate);
-            const restant = Math.max(0, p.targetAmount - p.reserveCurrent);
-            const hasStarted = !p.startDate || new Date(p.startDate) <= new Date();
-            const totalMonths = monthsBetweenDates(p.startDate || p.createdAt || todayISO(), p.targetDate);
-            const monthlyNeeded = restant / (hasStarted ? Math.max(1, remaining) : totalMonths);
-            const progress = p.targetAmount > 0 ? Math.min(1, p.reserveCurrent / p.targetAmount) : 0;
-            const atteint = p.reserveCurrent >= p.targetAmount;
-            return (
-              <Card key={p.id}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: C.fade }}>Échéance {p.targetDate} · cible {fmt(p.targetAmount)}{p.startDate && ` · début ${p.startDate}`}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <RingProgress value={progress} size={34} strokeWidth={3.5} color={atteint ? C.green : C.purple} />
-                    <div style={{ display: 'flex', gap: 2 }}>
-                      <IconBtn onClick={() => startEdit(p)}><Pencil size={15} /></IconBtn>
-                      <IconBtn onClick={() => duplicate(p)}><Copy size={15} /></IconBtn>
-                      <IconBtn onClick={() => remove(p.id)}><Trash2 size={15} /></IconBtn>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, fontFamily: FONT_MONO, color: atteint ? C.green : C.navy }}>{fmt(p.reserveCurrent)}</div>
-                    {!hasStarted ? (
-                      <Pill color={C.fade}>Cotisation à partir du {p.startDate}</Pill>
-                    ) : (
-                      <Pill color={atteint ? C.green : C.purple}>{atteint ? 'Objectif atteint' : `${fmt(monthlyNeeded)} / mois pour tenir le délai`}</Pill>
-                    )}
-                  </div>
-                  {!atteint && hasStarted && (
-                    <button onClick={() => cotiser(p.id, monthlyNeeded)} style={{ background: C.purple, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>+ Cotiser</button>
-                  )}
-                </div>
-              </Card>
-            );
-          }
+      {(() => {
+        const chargesRecurrentes = provisions.filter(p => p.type !== 'projet');
+        const projets = provisions.filter(p => p.type === 'projet');
+
+        function renderCharge(p) {
           const dueMonthP = p.dueMonth || 12;
           const startMonthP = Math.min(p.startMonth || 1, dueMonthP);
           const monthsToSave = Math.max(1, dueMonthP - startMonthP + 1);
@@ -1726,9 +1689,65 @@ function ProvisionsTab({ settings, provisions, saveProvisions, monthIdx, onTrash
               </div>
             </Card>
           );
-        })}
-        {provisions.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucune provision créée pour l'instant.</p>}
-      </div>
+        }
+
+        function renderProjet(p) {
+          const remaining = monthsRemainingUntil(p.targetDate);
+          const restant = Math.max(0, p.targetAmount - p.reserveCurrent);
+          const hasStarted = !p.startDate || new Date(p.startDate) <= new Date();
+          const totalMonths = monthsBetweenDates(p.startDate || p.createdAt || todayISO(), p.targetDate);
+          const monthlyNeeded = restant / (hasStarted ? Math.max(1, remaining) : totalMonths);
+          const progress = p.targetAmount > 0 ? Math.min(1, p.reserveCurrent / p.targetAmount) : 0;
+          const atteint = p.reserveCurrent >= p.targetAmount;
+          return (
+            <Card key={p.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: C.fade }}>Échéance {p.targetDate} · cible {fmt(p.targetAmount)}{p.startDate && ` · début ${p.startDate}`}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <RingProgress value={progress} size={34} strokeWidth={3.5} color={atteint ? C.green : C.purple} />
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <IconBtn onClick={() => startEdit(p)}><Pencil size={15} /></IconBtn>
+                    <IconBtn onClick={() => duplicate(p)}><Copy size={15} /></IconBtn>
+                    <IconBtn onClick={() => remove(p.id)}><Trash2 size={15} /></IconBtn>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, fontFamily: FONT_MONO, color: atteint ? C.green : C.navy }}>{fmt(p.reserveCurrent)}</div>
+                  {!hasStarted ? (
+                    <Pill color={C.fade}>Cotisation à partir du {p.startDate}</Pill>
+                  ) : (
+                    <Pill color={atteint ? C.green : C.purple}>{atteint ? 'Objectif atteint' : `${fmt(monthlyNeeded)} / mois pour tenir le délai`}</Pill>
+                  )}
+                </div>
+                {!atteint && hasStarted && (
+                  <button onClick={() => cotiser(p.id, monthlyNeeded)} style={{ background: C.purple, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>+ Cotiser</button>
+                )}
+              </div>
+            </Card>
+          );
+        }
+
+        return (
+          <>
+            <SectionTitle sub="Les charges annuelles à lisser mois après mois.">Charges récurrentes</SectionTitle>
+            <div style={{ display: 'grid', gap: 10, marginBottom: 22 }}>
+              {chargesRecurrentes.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucune charge récurrente créée pour l'instant.</p>}
+              {chargesRecurrentes.map(renderCharge)}
+            </div>
+
+            <SectionTitle sub="Les projets de vie que tu finances par cotisation régulière.">Projets / Objectifs</SectionTitle>
+            <div style={{ display: 'grid', gap: 10 }}>
+              {projets.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucun projet créé pour l'instant.</p>}
+              {projets.map(renderProjet)}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
