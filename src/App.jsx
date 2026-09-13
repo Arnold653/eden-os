@@ -73,6 +73,20 @@ const BIBLE_BOOKS = [
   ]],
 ];
 const BIBLE_TOTAL_CHAPTERS = BIBLE_BOOKS.reduce((s,[,books]) => s + books.reduce((s2,[,n]) => s2+n, 0), 0);
+const FAST_TYPES = ['Jeûne complet (24h)', 'Jeûne partiel (type Daniel)', 'Un repas sauté', 'Jeûne prolongé', 'Autre'];
+const CONTEXTES_EVANGELISATION = ['Famille', 'Voisinage', 'Travail', 'Rue / Public', 'Église', 'Autre'];
+function formatDuration(ms) {
+  if (ms < 0) ms = 0;
+  const totalMin = Math.floor(ms / 60000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const minutes = totalMin % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days} j`);
+  if (hours > 0 || days > 0) parts.push(`${hours} h`);
+  parts.push(`${minutes} min`);
+  return parts.join(' ');
+}
 function findCategoryByKeywords(categories, keywords) {
   return categories.find(c => keywords.some(k => c.name.toLowerCase().includes(k))) || null;
 }
@@ -1207,7 +1221,7 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
 }
 
 // ---------- Royaume (Dons + Disciplines) ----------
-function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction, duplicateTransaction, deleteTransaction, year, disciplineLogs, saveDisciplineLogs, disciplineSubjects, saveDisciplineSubjects, bibleProgress, saveBibleProgress }) {
+function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction, duplicateTransaction, deleteTransaction, year, disciplineLogs, saveDisciplineLogs, disciplineSubjects, saveDisciplineSubjects, bibleProgress, saveBibleProgress, fastingSessions, saveFastingSessions, evangelisationContacts, saveEvangelisationContacts }) {
   const [subview, setSubview] = useState('dons');
   const [donTypeId, setDonTypeId] = useState(settings.donTypes[0]?.id || '');
   const [beneficiary, setBeneficiary] = useState('');
@@ -1367,7 +1381,13 @@ function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction,
 
                   {isOpen && (
                     <div style={{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 12 }}>
-                      {entryType === 'compteur' && (
+                      {entryType === 'compteur' && /je[uû]ne/i.test(d.name) && (
+                        <FastingTracker discipline={d} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} fastingSessions={fastingSessions} saveFastingSessions={saveFastingSessions} />
+                      )}
+                      {entryType === 'compteur' && /évangél|evangel/i.test(d.name) && (
+                        <EvangelisationManager discipline={d} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} evangelisationContacts={evangelisationContacts} saveEvangelisationContacts={saveEvangelisationContacts} />
+                      )}
+                      {entryType === 'compteur' && !/je[uû]ne/i.test(d.name) && !/évangél|evangel/i.test(d.name) && (
                         <div style={{ display: 'flex', gap: 6 }}>
                           <TextInput type="number" placeholder="Valeur du jour" value={logValue[d.id] || ''} onChange={e => setLogValue({ ...logValue, [d.id]: e.target.value })} style={{ flex: 1 }} />
                           <button onClick={() => logToday(d.id)} style={{ background: C.gold, color: '#fff', border: 'none', borderRadius: 8, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>+ Ajouter</button>
@@ -1715,6 +1735,207 @@ function BibleReader({ discipline, disciplineLogs, saveDisciplineLogs, bibleProg
           <div style={{ fontSize: 11 }}>Aucune réflexion enregistrée pour l'instant.</div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Jeûne : minuteur de jeûne réel (début/fin, historique) ----------
+function FastingTracker({ discipline, disciplineLogs, saveDisciplineLogs, fastingSessions, saveFastingSessions }) {
+  const [type, setType] = useState(FAST_TYPES[0]);
+  const [note, setNote] = useState('');
+  const [, setTick] = useState(0);
+
+  const mine = fastingSessions.filter(f => f.disciplineId === discipline.id);
+  const active = mine.find(f => !f.endedAt);
+  const past = mine.filter(f => f.endedAt).sort((a,b) => new Date(b.endedAt) - new Date(a.endedAt));
+
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(id);
+  }, [active?.id]);
+
+  function commencer() {
+    saveFastingSessions([{ id: uid(), disciplineId: discipline.id, type, startedAt: new Date().toISOString(), endedAt: null, note: '' }, ...fastingSessions]);
+  }
+  function terminer() {
+    if (!active) return;
+    const endedAt = new Date().toISOString();
+    const durationMs = new Date(endedAt) - new Date(active.startedAt);
+    const days = Math.max(1, Math.round(durationMs / 86400000));
+    saveFastingSessions(fastingSessions.map(f => f.id === active.id ? { ...f, endedAt, note } : f));
+    saveDisciplineLogs([{ id: uid(), disciplineId: discipline.id, date: todayISO(), value: days, note: note ? `${active.type} · ${note}` : active.type }, ...disciplineLogs]);
+    setNote('');
+  }
+  function removeSession(id) {
+    saveFastingSessions(fastingSessions.filter(f => f.id !== id));
+  }
+
+  const elapsedMs = active ? (Date.now() - new Date(active.startedAt).getTime()) : 0;
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      {active ? (
+        <Card style={{ marginBottom: 12, background: C.cream, border: `1px solid ${C.gold}` }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.heading }}>{active.type}</div>
+          <div style={{ fontSize: 11, color: C.fade, marginBottom: 6 }}>Débuté le {new Date(active.startedAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, fontFamily: FONT_MONO, color: C.gold, marginBottom: 8 }}>{formatDuration(elapsedMs)}</div>
+          <TextInput placeholder="Note de fin (optionnel)" value={note} onChange={e => setNote(e.target.value)} style={{ marginBottom: 8 }} />
+          <button onClick={terminer} style={{ width: '100%', background: C.navy, color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Terminer le jeûne</button>
+        </Card>
+      ) : (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <Select value={type} onChange={e => setType(e.target.value)} style={{ flex: 1 }}>
+            {FAST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </Select>
+          <button onClick={commencer} style={{ background: C.gold, color: '#fff', border: 'none', borderRadius: 8, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>Commencer</button>
+        </div>
+      )}
+
+      {past.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.heading, marginBottom: 4 }}>Historique ({past.length})</div>
+          {past.map(f => (
+            <div key={f.id} style={{ padding: '7px 0', borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{f.type}</div>
+                  <div style={{ fontSize: 10.5, color: C.fade }}>{new Date(f.startedAt).toLocaleDateString('fr-FR')} · {formatDuration(new Date(f.endedAt) - new Date(f.startedAt))}{f.note ? ' · ' + f.note : ''}</div>
+                </div>
+                <IconBtn onClick={() => removeSession(f.id)}><Trash2 size={13} /></IconBtn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {past.length === 0 && !active && <p style={{ fontSize: 12, color: C.fade }}>Aucun jeûne enregistré pour l'instant.</p>}
+    </div>
+  );
+}
+
+// ---------- Évangélisation : suivi des personnes rencontrées (à suivre → intéressé → décision) ----------
+function EvangelisationManager({ discipline, disciplineLogs, saveDisciplineLogs, evangelisationContacts, saveEvangelisationContacts }) {
+  const [texte, setTexte] = useState('');
+  const [contexte, setContexte] = useState(CONTEXTES_EVANGELISATION[0]);
+  const [noteDraft, setNoteDraft] = useState({});
+
+  const mine = evangelisationContacts.filter(c => c.disciplineId === discipline.id);
+  const aSuivre = mine.filter(c => c.statut === 'a_suivre').sort((a,b) => new Date(b.dateCreation) - new Date(a.dateCreation));
+  const interesse = mine.filter(c => c.statut === 'interesse').sort((a,b) => new Date(b.dateSuivi) - new Date(a.dateSuivi));
+  const decisions = mine.filter(c => c.statut === 'decision').sort((a,b) => new Date(b.dateSuivi) - new Date(a.dateSuivi));
+
+  function groupByContexte(list) {
+    const map = {};
+    CONTEXTES_EVANGELISATION.forEach(c => map[c] = []);
+    list.forEach(c => { const ctx = CONTEXTES_EVANGELISATION.includes(c.contexte) ? c.contexte : 'Autre'; map[ctx].push(c); });
+    return map;
+  }
+  const aSuivreByCtx = groupByContexte(aSuivre);
+  const tauxDecision = mine.length > 0 ? decisions.length / mine.length : null;
+
+  function addContact() {
+    if (!texte.trim()) return;
+    saveEvangelisationContacts([{ id: uid(), disciplineId: discipline.id, texte: texte.trim(), contexte, statut: 'a_suivre', dateCreation: todayISO(), dateSuivi: null, note: '' }, ...evangelisationContacts]);
+    saveDisciplineLogs([{ id: uid(), disciplineId: discipline.id, date: todayISO(), value: 1, note: '' }, ...disciplineLogs]);
+    setTexte('');
+  }
+  function setStatut(id, statut) {
+    saveEvangelisationContacts(evangelisationContacts.map(c => c.id === id ? { ...c, statut, dateSuivi: todayISO() } : c));
+  }
+  function reouvrir(id) {
+    saveEvangelisationContacts(evangelisationContacts.map(c => c.id === id ? { ...c, statut: 'a_suivre', dateSuivi: null } : c));
+  }
+  function saveNote(id) {
+    saveEvangelisationContacts(evangelisationContacts.map(c => c.id === id ? { ...c, note: noteDraft[id] ?? c.note } : c));
+  }
+  function removeContact(id) {
+    saveEvangelisationContacts(evangelisationContacts.filter(c => c.id !== id));
+  }
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      {mine.length > 0 && (
+        <Card style={{ padding: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: C.fade }}>Taux de décision</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.green, fontFamily: FONT_MONO }}>{tauxDecision !== null ? pct(tauxDecision) : '—'}</div>
+          <div style={{ fontSize: 10, color: C.fade }}>{mine.length} personne(s) touchée(s) · {decisions.length} décision(s)</div>
+        </Card>
+      )}
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        <TextInput placeholder="Qui as-tu rencontré ?" value={texte} onChange={e => setTexte(e.target.value)} style={{ flex: 1 }} />
+        <Select value={contexte} onChange={e => setContexte(e.target.value)} style={{ width: 130 }}>
+          {CONTEXTES_EVANGELISATION.map(c => <option key={c} value={c}>{c}</option>)}
+        </Select>
+        <button onClick={addContact} disabled={!texte.trim()} style={{ background: C.gold, color: '#fff', border: 'none', borderRadius: 8, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: texte.trim() ? 'pointer' : 'default' }}>+ Ajouter</button>
+      </div>
+
+      {aSuivre.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.heading, marginBottom: 4 }}>À suivre ({aSuivre.length})</div>
+          {CONTEXTES_EVANGELISATION.map(ctx => aSuivreByCtx[ctx].length > 0 && (
+            <div key={ctx} style={{ marginBottom: 8 }}>
+              <Pill color={tagColor(ctx)}>{ctx}</Pill>
+              {aSuivreByCtx[ctx].map(c => (
+                <div key={c.id} style={{ padding: '7px 0', borderBottom: `1px solid ${C.line}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontSize: 13 }}>{c.texte}<span style={{ color: C.fade, fontSize: 10 }}> · depuis le {c.dateCreation}</span></div>
+                    <IconBtn onClick={() => removeContact(c.id)}><Trash2 size={13} /></IconBtn>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                    <button onClick={() => setStatut(c.id, 'interesse')} style={{ background: C.purple, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>Intéressé(e)</button>
+                    <button onClick={() => setStatut(c.id, 'decision')} style={{ background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✓ A pris une décision</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {interesse.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.purple, marginBottom: 4 }}>Intéressé(e)s ({interesse.length})</div>
+          {interesse.map(c => (
+            <div key={c.id} style={{ padding: '7px 0', borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 13 }}>{c.texte}<span style={{ color: C.fade, fontSize: 10 }}> · {c.contexte} · suivi le {c.dateSuivi}</span></div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={() => setStatut(c.id, 'decision')} style={{ background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '2px 6px', fontSize: 9, cursor: 'pointer' }}>✓ Décision</button>
+                  <IconBtn onClick={() => removeContact(c.id)}><Trash2 size={13} /></IconBtn>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                <TextInput placeholder="Suivi : où en est la relation…" value={noteDraft[c.id] ?? c.note} onChange={e => setNoteDraft({ ...noteDraft, [c.id]: e.target.value })} onBlur={() => saveNote(c.id)} style={{ fontSize: 12, flex: 1 }} />
+                <MicButton size={13} onResult={t => { const v = (noteDraft[c.id] ?? c.note) || ''; const nv = v ? v + ' ' + t : t; setNoteDraft({ ...noteDraft, [c.id]: nv }); saveEvangelisationContacts(evangelisationContacts.map(x => x.id === c.id ? { ...x, note: nv } : x)); }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {decisions.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.green, marginBottom: 4 }}>Décisions ({decisions.length})</div>
+          {decisions.map(c => (
+            <div key={c.id} style={{ padding: '7px 0', borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 13 }}>{c.texte}<span style={{ color: C.fade, fontSize: 10 }}> · {c.contexte} · le {c.dateSuivi}</span></div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={() => reouvrir(c.id)} style={{ background: 'none', border: `1px solid ${C.line}`, borderRadius: 6, padding: '2px 6px', fontSize: 9, cursor: 'pointer', color: C.fade }}>Rouvrir</button>
+                  <IconBtn onClick={() => removeContact(c.id)}><Trash2 size={13} /></IconBtn>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                <TextInput placeholder="Témoignage…" value={noteDraft[c.id] ?? c.note} onChange={e => setNoteDraft({ ...noteDraft, [c.id]: e.target.value })} onBlur={() => saveNote(c.id)} style={{ fontSize: 12, flex: 1 }} />
+                <MicButton size={13} onResult={t => { const v = (noteDraft[c.id] ?? c.note) || ''; const nv = v ? v + ' ' + t : t; setNoteDraft({ ...noteDraft, [c.id]: nv }); saveEvangelisationContacts(evangelisationContacts.map(x => x.id === c.id ? { ...x, note: nv } : x)); }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {mine.length === 0 && <p style={{ fontSize: 12, color: C.fade }}>Aucun contact enregistré pour l'instant.</p>}
     </div>
   );
 }
@@ -5073,6 +5294,8 @@ export default function App() {
   const [contacts, setContacts] = useState([]);
   const [disciplineSubjects, setDisciplineSubjects] = useState([]);
   const [bibleProgress, setBibleProgress] = useState({});
+  const [fastingSessions, setFastingSessions] = useState([]);
+  const [evangelisationContacts, setEvangelisationContacts] = useState([]);
   const [relationLogs, setRelationLogs] = useState([]);
   const [trash, setTrash] = useState([]);
   const [tab, setTabRaw] = useState(() => {
@@ -5175,6 +5398,8 @@ export default function App() {
       try { const ct = await window.storage.get('contacts'); setContacts(ct ? JSON.parse(ct.value) : []); } catch (e) { setContacts([]); }
       try { const ds = await window.storage.get('disciplineSubjects'); setDisciplineSubjects(ds ? JSON.parse(ds.value) : []); } catch (e) { setDisciplineSubjects([]); }
       try { const bp = await window.storage.get('bibleProgress'); setBibleProgress(bp ? JSON.parse(bp.value) : {}); } catch (e) { setBibleProgress({}); }
+      try { const fs = await window.storage.get('fastingSessions'); setFastingSessions(fs ? JSON.parse(fs.value) : []); } catch (e) { setFastingSessions([]); }
+      try { const ec = await window.storage.get('evangelisationContacts'); setEvangelisationContacts(ec ? JSON.parse(ec.value) : []); } catch (e) { setEvangelisationContacts([]); }
       try { const rl = await window.storage.get('relationLogs'); setRelationLogs(rl ? JSON.parse(rl.value) : []); } catch (e) { setRelationLogs([]); }
       try {
         const tr = await window.storage.get('trash');
@@ -5199,6 +5424,7 @@ export default function App() {
       settings, transactions, debts, provisions, decisions, journal, disciplineLogs, visionDoc,
       objectifs, revues, timeLogs, healthLogs, poidsLogs, manualScores, lectures, lectureLogs,
       growthLogs, contacts, disciplineSubjects, relationLogs, trash, bibleProgress,
+      fastingSessions, evangelisationContacts,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -5222,6 +5448,7 @@ export default function App() {
         poidsLogs: setPoidsLogs, manualScores: setManualScores, lectures: setLectures, lectureLogs: setLectureLogs,
         growthLogs: setGrowthLogs, contacts: setContacts, disciplineSubjects: setDisciplineSubjects, relationLogs: setRelationLogs, trash: setTrash,
         bibleProgress: setBibleProgress,
+        fastingSessions: setFastingSessions, evangelisationContacts: setEvangelisationContacts,
       };
       for (const key of Object.keys(setters)) {
         if (data[key] !== undefined) {
@@ -5310,6 +5537,14 @@ export default function App() {
   async function saveBibleProgress(next) {
     setBibleProgress(next);
     try { await window.storage.set('bibleProgress', JSON.stringify(next)); } catch (e) { console.error(e); }
+  }
+  async function saveFastingSessions(next) {
+    setFastingSessions(next);
+    try { await window.storage.set('fastingSessions', JSON.stringify(next)); } catch (e) { console.error(e); }
+  }
+  async function saveEvangelisationContacts(next) {
+    setEvangelisationContacts(next);
+    try { await window.storage.set('evangelisationContacts', JSON.stringify(next)); } catch (e) { console.error(e); }
   }
   async function saveRelationLogs(next) {
     setRelationLogs(next);
@@ -5448,7 +5683,7 @@ export default function App() {
         <div style={{ padding: '16px 16px 8px' }}>
           {tab === 'dashboard' && <Dashboard revenuMois={revenuMois} donsMois={donsMois} depensesMois={depensesMois} soldeMois={soldeMois} tauxDime={tauxDime} pieData={pieData} last6={last6} comptesSoldes={comptesSoldes} objectifZero={settings.objectifZero} indice={indiceGlobal} settings={settings} transactions={transactions} debts={debts} timeLogs={timeLogs} healthLogs={healthLogs} disciplineLogs={disciplineLogs} decisions={decisions} objectifs={objectifs} revues={revues} provisions={provisions} lectures={lectures} lectureLogs={lectureLogs} growthLogs={growthLogs} monthIdx={monthIdx} year={year} />}
           {tab === 'transactions' && <TransactionsTab settings={settings} monthTx={monthTx} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} groupTotals={groupTotals} debts={debts} saveDebts={saveDebts} provisions={provisions} saveProvisions={saveProvisions} />}
-          {tab === 'royaume' && <RoyaumeTab settings={settings} transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} year={year} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} />}
+          {tab === 'royaume' && <RoyaumeTab settings={settings} transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} year={year} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} fastingSessions={fastingSessions} saveFastingSessions={saveFastingSessions} evangelisationContacts={evangelisationContacts} saveEvangelisationContacts={saveEvangelisationContacts} />}
           {tab === 'provisions' && <ProvisionsTab settings={settings} provisions={provisions} saveProvisions={saveProvisions} monthIdx={monthIdx} onTrash={moveToTrash} />}
           {tab === 'dettes' && <DettesTab settings={settings} debts={debts} saveDebts={saveDebts} onTrash={moveToTrash} />}
           {tab === 'sagesse' && <SagesseTab decisions={decisions} saveDecisions={saveDecisions} journal={journal} saveJournal={saveJournal} onTrash={moveToTrash} />}
