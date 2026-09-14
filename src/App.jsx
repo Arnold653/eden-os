@@ -420,8 +420,14 @@ function isModuleVisible(settings, modId) {
   return true;
 }
 
-function Dashboard({ revenuMois, donsMois, depensesMois, soldeMois, tauxDime, pieData, last6, comptesSoldes, objectifZero, indice, settings, transactions, debts, timeLogs, healthLogs, disciplineLogs, decisions, objectifs, revues, provisions, lectures, lectureLogs, growthLogs, monthIdx, year }) {
+function Dashboard({ revenuMois, donsMois, depensesMois, soldeMois, tauxDime, pieData, last6, comptesSoldes, objectifZero, indice, settings, transactions, debts, timeLogs, healthLogs, disciplineLogs, decisions, objectifs, revues, provisions, lectures, lectureLogs, growthLogs, monthIdx, year, onNavigate }) {
   const [subview, setSubview] = useState('mois');
+  const disabledCapitalsQuick = settings.disabledCapitals || [];
+  const disabledModulesQuick = settings.disabledModules || [];
+  const quickAccessCapitals = CAPITALS
+    .filter(cap => !disabledCapitalsQuick.includes(cap.id))
+    .map(cap => ({ ...cap, modules: cap.modules.filter(m => !disabledModulesQuick.includes(m.id)) }))
+    .filter(cap => cap.modules.length > 0);
   // --- Temps : total de la semaine + catégorie la plus en retard ---
   const timeCats = settings.timeCategories || [];
   const timeWeekTotals = timeCats.map(c => ({
@@ -630,6 +636,31 @@ function Dashboard({ revenuMois, donsMois, depensesMois, soldeMois, tauxDime, pi
 
   return (
     <div>
+      <SectionTitle>Accès rapide</SectionTitle>
+      <div style={{ marginBottom: 16 }}>
+        {quickAccessCapitals.map(cap => (
+          <div key={cap.id} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.fade, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 5 }}>{cap.name}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8 }}>
+              {cap.modules.map(m => {
+                const MIcon = m.icon;
+                return (
+                  <button key={m.id} onClick={() => onNavigate(m.id)} style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 4px',
+                    background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, cursor: 'pointer', minWidth: 0,
+                  }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 10, background: cap.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <MIcon size={17} color="#fff" />
+                    </div>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: C.ink, textAlign: 'center' }}>{m.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
         {[['mois','Mois'],['annee','Année']].map(([k,label]) => (
           <button key={k} onClick={() => setSubview(k)} style={{
@@ -5148,8 +5179,8 @@ function SearchPanel({ settings, transactions, debts, provisions, decisions, jou
   );
 }
 
-// ---------- Tab bar (minimal: Accueil · Intendance · Modules) ----------
-function TabBar({ tab, setTab, onOpenModules }) {
+// ---------- Tab bar (minimal: Accueil · Intendance) ----------
+function TabBar({ tab, setTab }) {
   const items = [
     { id: 'dashboard', label: 'Accueil', icon: Home },
     { id: 'intendance', label: 'Intendance', icon: Gauge },
@@ -5165,13 +5196,6 @@ function TabBar({ tab, setTab, onOpenModules }) {
           </button>
         );
       })}
-      <button onClick={onOpenModules} style={{
-        width: 52, height: 52, borderRadius: '50%', border: 'none', cursor: 'pointer', flexShrink: 0,
-        background: `linear-gradient(155deg, ${C.gold} 0%, ${shade(C.gold, -18)} 100%)`,
-        boxShadow: `0 4px 12px ${C.gold}66`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: 6,
-      }}>
-        <LayoutGrid size={20} color="#fff" />
-      </button>
     </div>
   );
 }
@@ -5353,7 +5377,6 @@ export default function App() {
     }
     return false;
   });
-  const [showModules, setShowModules] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const now = new Date();
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -5681,7 +5704,7 @@ export default function App() {
         )}
         <Header tab={tab} monthIdx={monthIdx} year={year} onPrev={prevMonth} onNext={nextMonth} tauxDime={tauxDime} onOpenSettings={() => setShowSettings(true)} onOpenSearch={() => setShowSearch(true)} showBack={tab !== 'dashboard'} onBack={goBack} unreadCount={unreadNotifCount} onOpenNotifCenter={() => setShowNotifCenter(true)} />
         <div style={{ padding: '16px 16px 8px' }}>
-          {tab === 'dashboard' && <Dashboard revenuMois={revenuMois} donsMois={donsMois} depensesMois={depensesMois} soldeMois={soldeMois} tauxDime={tauxDime} pieData={pieData} last6={last6} comptesSoldes={comptesSoldes} objectifZero={settings.objectifZero} indice={indiceGlobal} settings={settings} transactions={transactions} debts={debts} timeLogs={timeLogs} healthLogs={healthLogs} disciplineLogs={disciplineLogs} decisions={decisions} objectifs={objectifs} revues={revues} provisions={provisions} lectures={lectures} lectureLogs={lectureLogs} growthLogs={growthLogs} monthIdx={monthIdx} year={year} />}
+          {tab === 'dashboard' && <Dashboard revenuMois={revenuMois} donsMois={donsMois} depensesMois={depensesMois} soldeMois={soldeMois} tauxDime={tauxDime} pieData={pieData} last6={last6} comptesSoldes={comptesSoldes} objectifZero={settings.objectifZero} indice={indiceGlobal} settings={settings} transactions={transactions} debts={debts} timeLogs={timeLogs} healthLogs={healthLogs} disciplineLogs={disciplineLogs} decisions={decisions} objectifs={objectifs} revues={revues} provisions={provisions} lectures={lectures} lectureLogs={lectureLogs} growthLogs={growthLogs} monthIdx={monthIdx} year={year} onNavigate={navigateTab} />}
           {tab === 'transactions' && <TransactionsTab settings={settings} monthTx={monthTx} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} groupTotals={groupTotals} debts={debts} saveDebts={saveDebts} provisions={provisions} saveProvisions={saveProvisions} />}
           {tab === 'royaume' && <RoyaumeTab settings={settings} transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} year={year} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} fastingSessions={fastingSessions} saveFastingSessions={saveFastingSessions} evangelisationContacts={evangelisationContacts} saveEvangelisationContacts={saveEvangelisationContacts} />}
           {tab === 'provisions' && <ProvisionsTab settings={settings} provisions={provisions} saveProvisions={saveProvisions} monthIdx={monthIdx} onTrash={moveToTrash} />}
@@ -5695,9 +5718,8 @@ export default function App() {
           {tab === 'relations' && <RelationsTab settings={settings} contacts={contacts} saveContacts={saveContacts} relationLogs={relationLogs} saveRelationLogs={saveRelationLogs} onTrash={moveToTrash} />}
           {tab === 'intendance' && <IndiceIntendanceTab settings={settings} transactions={transactions} debts={debts} timeLogs={timeLogs} healthLogs={healthLogs} decisions={decisions} objectifs={objectifs} revues={revues} monthIdx={monthIdx} year={year} manualScores={manualScores} saveManualScores={saveManualScores} />}
         </div>
-        <TabBar tab={tab} setTab={navigateTab} onOpenModules={() => setShowModules(true)} />
+        <TabBar tab={tab} setTab={navigateTab} />
         {showSettings && <ParametresPanel settings={settings} saveSettings={saveSettings} onClose={() => setShowSettings(false)} onExport={exportData} onImport={importData} onChangeCurrency={changeCurrency} userEmail={userEmail} trash={trash} onRestore={restoreFromTrash} onPurgeOne={purgeTrashItem} onPurgeAll={purgeAllTrash} />}
-        {showModules && <ModulesLauncher settings={settings} currentTab={tab} onSelect={(id) => { navigateTab(id, { viaModules: true }); setShowModules(false); }} onClose={() => setShowModules(false)} />}
         {showSearch && <SearchPanel settings={settings} transactions={transactions} debts={debts} provisions={provisions} decisions={decisions} journal={journal} objectifs={objectifs} lectures={lectures} contacts={contacts} onNavigate={(id) => { navigateTab(id); setShowSearch(false); }} onClose={() => setShowSearch(false)} />}
         {showReminders && <ReminderModal reminders={reminders} onClose={() => setShowReminders(false)} />}
         {showNotifCenter && (
