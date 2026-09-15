@@ -979,7 +979,7 @@ function Dashboard({ revenuMois, donsMois, depensesMois, soldeMois, tauxDime, pi
 }
 
 // ---------- Dépenses & Revenus (combined, toggle) ----------
-function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction, duplicateTransaction, deleteTransaction, groupTotals, debts, saveDebts, provisions, saveProvisions }) {
+function TransactionsTab({ settings, monthTx, transactions, year, addTransaction, updateTransaction, duplicateTransaction, deleteTransaction, groupTotals, debts, saveDebts, provisions, saveProvisions }) {
   const [kind, setKind] = useState('revenu');
   const [categoryId, setCategoryId] = useState(settings.categories[0]?.id || '');
   const [compteId, setCompteId] = useState(settings.comptes[0]?.id || '');
@@ -1081,7 +1081,12 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
     setAmount(String(t.amount)); setDate(t.date); setNote(t.note || '');
   }
 
-  const list = monthTx.filter(t => t.type === kind).sort((a,b) => new Date(b.date) - new Date(a.date));
+  const yearDons = kind === 'don' ? transactions.filter(t => t.type === 'don' && new Date(t.date).getFullYear() === year) : [];
+  const revenuAnnuel = kind === 'don' ? transactions.filter(t => t.type === 'revenu' && new Date(t.date).getFullYear() === year).reduce((s,t) => s + Number(t.amount||0), 0) : 0;
+  const totalGeneralDons = yearDons.reduce((s,t) => s + Number(t.amount||0), 0);
+  const byType = settings.donTypes.map(dt => ({ ...dt, total: yearDons.filter(t => t.donTypeId === dt.id).reduce((s,t) => s + Number(t.amount||0), 0) }));
+
+  const list = (kind === 'don' ? yearDons : monthTx.filter(t => t.type === kind)).sort((a,b) => new Date(b.date) - new Date(a.date));
 
   return (
     <div>
@@ -1225,8 +1230,28 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
         </>
       )}
 
-      <SectionTitle>{kind === 'depense' ? 'Détail des dépenses' : 'Revenus du mois'}</SectionTitle>
-      {list.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Rien d'enregistré ce mois.</p>}
+      {kind === 'don' ? (
+        <>
+          <SectionTitle>{`Récapitulatif ${year}`}</SectionTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            {byType.map(t => (
+              <Card key={t.id}><div style={{fontSize:11,color:C.fade}}>{t.name}</div><div style={{fontFamily:FONT_MONO, fontWeight:700}}>{fmt(t.total)}</div></Card>
+            ))}
+            <Card style={{ background: `linear-gradient(155deg, ${C.gold} 0%, ${shade(C.gold,-18)} 100%)`, border: 'none', color: '#fff', position: 'relative', overflow: 'hidden' }}>
+              <Watermark Icon={Crown} size={64} top={-14} right={-10} opacity={0.18} />
+              <div style={{fontSize:11, opacity:0.9}}>% du revenu annuel</div>
+              <div style={{fontFamily:FONT_MONO, fontWeight:700, fontVariantNumeric: 'tabular-nums'}}>{revenuAnnuel > 0 ? pct(totalGeneralDons/revenuAnnuel) : '—'}</div>
+            </Card>
+          </div>
+          <SectionTitle>Historique</SectionTitle>
+          {list.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucun don enregistré cette année.</p>}
+        </>
+      ) : (
+        <>
+          <SectionTitle>{kind === 'depense' ? 'Détail des dépenses' : 'Revenus du mois'}</SectionTitle>
+          {list.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Rien d'enregistré ce mois.</p>}
+        </>
+      )}
       <div style={{ display: 'grid', gap: 8 }}>
         {list.map(t => (
           <Card key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1252,40 +1277,7 @@ function TransactionsTab({ settings, monthTx, addTransaction, updateTransaction,
 }
 
 // ---------- Royaume (Dons + Disciplines) ----------
-function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction, duplicateTransaction, deleteTransaction, year, disciplineLogs, saveDisciplineLogs, disciplineSubjects, saveDisciplineSubjects, bibleProgress, saveBibleProgress, fastingSessions, saveFastingSessions, evangelisationContacts, saveEvangelisationContacts }) {
-  const [subview, setSubview] = useState('dons');
-  const [donTypeId, setDonTypeId] = useState(settings.donTypes[0]?.id || '');
-  const [beneficiary, setBeneficiary] = useState('');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(todayISO());
-  const [receipt, setReceipt] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-
-  useEffect(() => { if (!settings.donTypes.find(d => d.id === donTypeId)) setDonTypeId(settings.donTypes[0]?.id || ''); }, [settings.donTypes]);
-
-  const typeById = Object.fromEntries(settings.donTypes.map(d => [d.id, d]));
-  const yearDons = transactions.filter(t => t.type === 'don' && new Date(t.date).getFullYear() === year);
-  const revenuAnnuel = transactions.filter(t => t.type === 'revenu' && new Date(t.date).getFullYear() === year).reduce((s,t) => s + Number(t.amount||0), 0);
-  const totalGeneral = yearDons.reduce((s,t) => s + Number(t.amount||0), 0);
-
-  function resetForm() { setEditingId(null); setAmount(''); setBeneficiary(''); setReceipt(false); }
-  function submit() {
-    if (!amount || !donTypeId) return;
-    const payload = { type: 'don', donTypeId, beneficiary, amount: Number(amount), date, receipt };
-    if (editingId) updateTransaction(editingId, payload);
-    else addTransaction(payload);
-    resetForm();
-  }
-  function startEdit(t) {
-    setEditingId(t.id); setDonTypeId(t.donTypeId); setBeneficiary(t.beneficiary || '');
-    setAmount(String(t.amount)); setDate(t.date); setReceipt(!!t.receipt);
-  }
-
-  const list = yearDons.sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 30);
-  const byType = settings.donTypes.map(dt => ({
-    ...dt, total: yearDons.filter(t => t.donTypeId === dt.id).reduce((s,t) => s + Number(t.amount||0), 0),
-  }));
-
+function RoyaumeTab({ settings, disciplineLogs, saveDisciplineLogs, disciplineSubjects, saveDisciplineSubjects, bibleProgress, saveBibleProgress, fastingSessions, saveFastingSessions, evangelisationContacts, saveEvangelisationContacts }) {
   // --- disciplines logging ---
   const now = new Date();
   const [logValue, setLogValue] = useState({});
@@ -1302,86 +1294,10 @@ function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction,
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        {[['dons','Dons'],['disciplines','Disciplines']].map(([k,label]) => (
-          <button key={k} onClick={() => setSubview(k)} style={{
-            flex: 1, padding: '9px', borderRadius: 8, border: `1px solid ${C.line}`, fontWeight: 700, fontSize: 13, cursor: 'pointer',
-            background: subview === k ? C.navy : '#fff', color: subview === k ? '#fff' : C.ink,
-          }}>{label}</button>
-        ))}
-      </div>
-
-      {subview === 'dons' && (
-        <div>
-          {editingId ? (
-            <>
-              <SectionTitle>Modifier ce don</SectionTitle>
-              <Card style={{ marginBottom: 14 }}>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <Select value={donTypeId} onChange={e => setDonTypeId(e.target.value)}>
-                    {settings.donTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </Select>
-                  <TextInput placeholder="Bénéficiaire / église" value={beneficiary} onChange={e => setBeneficiary(e.target.value)} />
-                  <TextInput type="number" placeholder={`Montant (${CURRENCIES[settings.currency||"FCFA"].symbol})`} value={amount} onChange={e => setAmount(e.target.value)} />
-                  <TextInput type="date" value={date} onChange={e => setDate(e.target.value)} />
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                    <input type="checkbox" checked={receipt} onChange={e => setReceipt(e.target.checked)} /> Reçu obtenu
-                  </label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <PrimaryButton onClick={submit} disabled={!amount} style={{ flex: 1 }}>
-                      <Pencil size={15}/> Enregistrer les modifications
-                    </PrimaryButton>
-                    <button onClick={resetForm} style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: '0 14px', fontWeight: 700, fontSize: 13, cursor: 'pointer', color: C.ink }}>Annuler</button>
-                  </div>
-                </div>
-              </Card>
-            </>
-          ) : (
-            <Card style={{ marginBottom: 14, background: C.cream, border: `1px dashed ${C.line}` }}>
-              <p style={{ fontSize: 12.5, color: C.ink, margin: 0 }}>
-                Pour enregistrer un nouveau don, utilise l'onglet <strong>Don</strong> dans <strong>Mouvements</strong>. Tu retrouves ici le récapitulatif annuel et l'historique.
-              </p>
-            </Card>
-          )}
-
-          <SectionTitle>Récapitulatif {year}</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-            {byType.map(t => (
-              <Card key={t.id}><div style={{fontSize:11,color:C.fade}}>{t.name}</div><div style={{fontFamily:FONT_MONO, fontWeight:700}}>{fmt(t.total)}</div></Card>
-            ))}
-            <Card style={{ background: `linear-gradient(155deg, ${C.gold} 0%, ${shade(C.gold,-18)} 100%)`, border: 'none', color: '#fff', position: 'relative', overflow: 'hidden' }}>
-              <Watermark Icon={Crown} size={64} top={-14} right={-10} opacity={0.18} />
-              <div style={{fontSize:11, opacity:0.9}}>% du revenu annuel</div>
-              <div style={{fontFamily:FONT_MONO, fontWeight:700, fontVariantNumeric: 'tabular-nums'}}>{revenuAnnuel > 0 ? pct(totalGeneral/revenuAnnuel) : '—'}</div>
-            </Card>
-          </div>
-
-          <SectionTitle>Historique</SectionTitle>
-          {list.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucun don enregistré cette année.</p>}
-          <div style={{ display: 'grid', gap: 8 }}>
-            {list.map(t => (
-              <Card key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{typeById[t.donTypeId]?.name || '—'}{t.beneficiary ? ' · ' + t.beneficiary : ''}</div>
-                  <div style={{ fontSize: 11, color: C.fade }}>{t.date}{t.receipt ? ' · reçu ✓' : ''}</div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: C.gold }}>{fmt(t.amount)}</span>
-                  <IconBtn onClick={() => startEdit(t)}><Pencil size={15} /></IconBtn>
-                  <IconBtn onClick={() => duplicateTransaction(t)}><Copy size={15} /></IconBtn>
-                  <IconBtn onClick={() => deleteTransaction(t.id)}><Trash2 size={15} /></IconBtn>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {subview === 'disciplines' && (
-        <div>
-          <SectionTitle sub="Indicateurs de régularité aux engagements pris — pas une mesure de maturité spirituelle. Les sujets de prière et les notes de lecture n'entrent jamais dans l'Indice d'Intendance : ils restent un espace de mémoire, pas de performance.">Disciplines du mois</SectionTitle>
-          <div style={{ display: 'grid', gap: 10 }}>
-            {settings.disciplines.map(d => {
+      <div style={{ display: 'grid', gap: 10 }}>
+        <SectionTitle sub="Indicateurs de régularité aux engagements pris — pas une mesure de maturité spirituelle. Les sujets de prière et les notes de lecture n'entrent jamais dans l'Indice d'Intendance : ils restent un espace de mémoire, pas de performance.">Disciplines du mois</SectionTitle>
+        <div style={{ display: 'grid', gap: 10 }}>
+          {settings.disciplines.map(d => {
               const entryType = d.entryType || 'compteur';
               const total = monthTotal(d.id);
               const progress = d.monthlyTarget > 0 ? Math.min(1, total / d.monthlyTarget) : 0;
@@ -1441,7 +1357,6 @@ function RoyaumeTab({ settings, transactions, addTransaction, updateTransaction,
             {settings.disciplines.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucune discipline définie — ajoute-en dans Paramètres.</p>}
           </div>
         </div>
-      )}
     </div>
   );
 }
@@ -5705,8 +5620,8 @@ export default function App() {
         <Header tab={tab} monthIdx={monthIdx} year={year} onPrev={prevMonth} onNext={nextMonth} tauxDime={tauxDime} onOpenSettings={() => setShowSettings(true)} onOpenSearch={() => setShowSearch(true)} showBack={tab !== 'dashboard'} onBack={goBack} unreadCount={unreadNotifCount} onOpenNotifCenter={() => setShowNotifCenter(true)} />
         <div style={{ padding: '16px 16px 8px' }}>
           {tab === 'dashboard' && <Dashboard revenuMois={revenuMois} donsMois={donsMois} depensesMois={depensesMois} soldeMois={soldeMois} tauxDime={tauxDime} pieData={pieData} last6={last6} comptesSoldes={comptesSoldes} objectifZero={settings.objectifZero} indice={indiceGlobal} settings={settings} transactions={transactions} debts={debts} timeLogs={timeLogs} healthLogs={healthLogs} disciplineLogs={disciplineLogs} decisions={decisions} objectifs={objectifs} revues={revues} provisions={provisions} lectures={lectures} lectureLogs={lectureLogs} growthLogs={growthLogs} monthIdx={monthIdx} year={year} onNavigate={navigateTab} />}
-          {tab === 'transactions' && <TransactionsTab settings={settings} monthTx={monthTx} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} groupTotals={groupTotals} debts={debts} saveDebts={saveDebts} provisions={provisions} saveProvisions={saveProvisions} />}
-          {tab === 'royaume' && <RoyaumeTab settings={settings} transactions={transactions} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} year={year} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} fastingSessions={fastingSessions} saveFastingSessions={saveFastingSessions} evangelisationContacts={evangelisationContacts} saveEvangelisationContacts={saveEvangelisationContacts} />}
+          {tab === 'transactions' && <TransactionsTab settings={settings} monthTx={monthTx} transactions={transactions} year={year} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} groupTotals={groupTotals} debts={debts} saveDebts={saveDebts} provisions={provisions} saveProvisions={saveProvisions} />}
+          {tab === 'royaume' && <RoyaumeTab settings={settings} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} fastingSessions={fastingSessions} saveFastingSessions={saveFastingSessions} evangelisationContacts={evangelisationContacts} saveEvangelisationContacts={saveEvangelisationContacts} />}
           {tab === 'provisions' && <ProvisionsTab settings={settings} provisions={provisions} saveProvisions={saveProvisions} monthIdx={monthIdx} onTrash={moveToTrash} />}
           {tab === 'dettes' && <DettesTab settings={settings} debts={debts} saveDebts={saveDebts} onTrash={moveToTrash} />}
           {tab === 'sagesse' && <SagesseTab decisions={decisions} saveDecisions={saveDecisions} journal={journal} saveJournal={saveJournal} onTrash={moveToTrash} />}
