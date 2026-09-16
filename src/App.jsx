@@ -2201,25 +2201,26 @@ function DettesTab({ settings, debts, saveDebts, onTrash }) {
   const [currentBalance, setCurrentBalance] = useState('');
   const [monthlyPayment, setMonthlyPayment] = useState('');
   const [startDate, setStartDate] = useState('');
+  const [debtType, setDebtType] = useState('consommation');
 
   function resetForm() {
-    setEditingId(null); setName(''); setInitialBalance(''); setCurrentBalance(''); setMonthlyPayment(''); setStartDate('');
+    setEditingId(null); setName(''); setInitialBalance(''); setCurrentBalance(''); setMonthlyPayment(''); setStartDate(''); setDebtType('consommation');
   }
   function addDebt() {
     if (!name || !currentBalance || !monthlyPayment) return;
     if (editingId) {
       saveDebts(debts.map(d => d.id === editingId ? {
         ...d, name, initialBalance: Number(initialBalance || currentBalance), currentBalance: Number(currentBalance),
-        monthlyPayment: Number(monthlyPayment), startDate: startDate || undefined,
+        monthlyPayment: Number(monthlyPayment), startDate: startDate || undefined, debtType,
       } : d));
     } else {
-      saveDebts([...debts, { id: uid(), name, initialBalance: Number(initialBalance || currentBalance), currentBalance: Number(currentBalance), monthlyPayment: Number(monthlyPayment), startDate: startDate || undefined }]);
+      saveDebts([...debts, { id: uid(), name, initialBalance: Number(initialBalance || currentBalance), currentBalance: Number(currentBalance), monthlyPayment: Number(monthlyPayment), startDate: startDate || undefined, debtType }]);
     }
     resetForm();
   }
   function startEdit(d) {
     setEditingId(d.id); setName(d.name); setInitialBalance(String(d.initialBalance || ''));
-    setCurrentBalance(String(d.currentBalance)); setMonthlyPayment(String(d.monthlyPayment)); setStartDate(d.startDate || '');
+    setCurrentBalance(String(d.currentBalance)); setMonthlyPayment(String(d.monthlyPayment)); setStartDate(d.startDate || ''); setDebtType(d.debtType || 'consommation');
   }
   function duplicate(d) {
     saveDebts([...debts, { ...d, id: uid(), name: d.name + ' (copie)' }]);
@@ -2236,6 +2237,8 @@ function DettesTab({ settings, debts, saveDebts, onTrash }) {
 
   const sorted = [...debts].sort((a,b) => a.currentBalance - b.currentBalance);
   const totalRestant = debts.reduce((s,d) => s + d.currentBalance, 0);
+  const totalToxique = debts.filter(d => (d.debtType || 'consommation') !== 'levier').reduce((s,d) => s + d.currentBalance, 0);
+  const totalLevier = debts.filter(d => d.debtType === 'levier').reduce((s,d) => s + d.currentBalance, 0);
   const curSymbol = CURRENCIES[settings.currency || 'FCFA'].symbol;
 
   return (
@@ -2244,6 +2247,19 @@ function DettesTab({ settings, debts, saveDebts, onTrash }) {
       <Card style={{ marginBottom: 14 }}>
         <div style={{ display: 'grid', gap: 8 }}>
           <TextInput placeholder="Nom de la dette" value={name} onChange={e => setName(e.target.value)} />
+          <div>
+            <div style={{ fontSize: 11, color: C.fade, marginBottom: 4 }}>Type de dette</div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: 9, borderRadius: 8, border: `1px solid ${debtType !== 'levier' ? C.terracotta : C.line}`, cursor: 'pointer' }}>
+                <input type="radio" checked={debtType !== 'levier'} onChange={() => setDebtType('consommation')} style={{ marginTop: 2 }} />
+                <div><div style={{ fontSize: 12, fontWeight: 700 }}>Consommation (toxique)</div><div style={{ fontSize: 10.5, color: C.fade }}>Crédit auto, vacances, cartes — vous rend esclave</div></div>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: 9, borderRadius: 8, border: `1px solid ${debtType === 'levier' ? C.green : C.line}`, cursor: 'pointer' }}>
+                <input type="radio" checked={debtType === 'levier'} onChange={() => setDebtType('levier')} style={{ marginTop: 2 }} />
+                <div><div style={{ fontSize: 12, fontWeight: 700 }}>Levier (stratégique)</div><div style={{ fontSize: 10.5, color: C.fade }}>Immobilier locatif, business — l'actif rembourse la dette</div></div>
+              </label>
+            </div>
+          </div>
           <TextInput type="number" placeholder="Solde initial (optionnel)" value={initialBalance} onChange={e => setInitialBalance(e.target.value)} />
           <TextInput type="number" placeholder={`Solde actuel (${curSymbol})`} value={currentBalance} onChange={e => setCurrentBalance(e.target.value)} />
           <TextInput type="number" placeholder={`Paiement mensuel (${curSymbol})`} value={monthlyPayment} onChange={e => setMonthlyPayment(e.target.value)} />
@@ -2259,10 +2275,22 @@ function DettesTab({ settings, debts, saveDebts, onTrash }) {
           </div>
         </div>
       </Card>
-      <Card style={{ marginBottom: 14, background: C.navy, color: '#fff', border: 'none' }}>
+      <Card style={{ marginBottom: 10, background: C.navy, color: '#fff', border: 'none' }}>
         <div style={{ fontSize: 11, opacity: 0.8 }}>Total dettes restantes</div>
         <div style={{ fontSize: 18, fontWeight: 700, fontFamily: FONT_MONO }}>{fmt(totalRestant)}</div>
       </Card>
+      {debts.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          <Card style={{ borderLeft: `3px solid ${C.terracotta}` }}>
+            <div style={{ fontSize: 10.5, color: C.fade }}>Consommation (toxique)</div>
+            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: FONT_MONO, color: C.terracotta }}>{fmt(totalToxique)}</div>
+          </Card>
+          <Card style={{ borderLeft: `3px solid ${C.green}` }}>
+            <div style={{ fontSize: 10.5, color: C.fade }}>Levier (stratégique)</div>
+            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: FONT_MONO, color: C.green }}>{fmt(totalLevier)}</div>
+          </Card>
+        </div>
+      )}
       <SectionTitle>Stratégie boule de neige</SectionTitle>
       {sorted.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucune dette enregistrée — bonne nouvelle !</p>}
       <div style={{ display: 'grid', gap: 10 }}>
@@ -2270,12 +2298,14 @@ function DettesTab({ settings, debts, saveDebts, onTrash }) {
           const monthsLeft = d.monthlyPayment > 0 ? Math.ceil(d.currentBalance / d.monthlyPayment) : null;
           const progress = d.initialBalance > 0 ? 1 - (d.currentBalance / d.initialBalance) : 0;
           const remboursementStarted = !d.startDate || new Date(d.startDate) <= new Date();
+          const isLevier = d.debtType === 'levier';
           return (
             <Card key={d.id}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {i === 0 && <Pill color={C.green}>PRIORITÉ 1</Pill>}
+                    <Pill color={isLevier ? C.green : C.terracotta}>{isLevier ? 'Levier' : 'Consommation'}</Pill>
                     <span style={{ fontSize: 14, fontWeight: 700 }}>{d.name}</span>
                   </div>
                   <div style={{ fontSize: 11, color: C.fade, marginTop: 2 }}>
