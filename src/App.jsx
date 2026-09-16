@@ -754,6 +754,42 @@ function Dashboard({ revenuMois, donsMois, depensesMois, soldeMois, tauxDime, pi
         </div>
       </Card>
 
+      {(() => {
+        const gaps = last6.map(m => ({ mois: m.mois, gap: m.Revenus > 0 ? (m.Revenus - m.Dépenses) / m.Revenus : null }));
+        const withGap = gaps.filter(g => g.gap !== null);
+        if (withGap.length === 0) return null;
+        const current = withGap[withGap.length - 1];
+        const previous = withGap.length > 1 ? withGap[withGap.length - 2] : null;
+        const trendDown = previous && current.gap < previous.gap - 0.02;
+        const trendUp = previous && current.gap > previous.gap + 0.02;
+        return (
+          <Card style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.heading }}>Gap de richesse (ce mois)</div>
+                <div style={{ fontSize: 10.5, color: C.fade, maxWidth: 220 }}>L'écart entre ce que tu gagnes et ce qui sort — c'est là que la richesse se construit.</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 20, fontWeight: 800, fontFamily: FONT_MONO, color: current.gap >= 0.2 ? C.green : current.gap >= 0 ? C.gold : C.terracotta }}>{pct(current.gap)}</div>
+                {trendDown && <div style={{ fontSize: 10, color: C.terracotta, fontWeight: 700 }}>▾ en baisse — attention à l'inflation de vie</div>}
+                {trendUp && <div style={{ fontSize: 10, color: C.green, fontWeight: 700 }}>▴ en hausse</div>}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 40 }}>
+              {withGap.map((g, i) => (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <div style={{
+                    width: '100%', borderRadius: 2, background: g.gap >= 0.2 ? C.green : g.gap >= 0 ? C.gold : C.terracotta,
+                    height: `${Math.max(4, Math.min(1, Math.abs(g.gap)) * 36)}px`,
+                  }} />
+                  <span style={{ fontSize: 8.5, color: C.fade }}>{g.mois}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
+
       {isModuleVisible(settings, 'royaume') && (
         <Card style={{ marginBottom: 14 }}>
           <Row label="Taux de dîme (mois)" value={pct(tauxDime)} valueColor={tauxDime >= 0.10 ? C.green : C.terracotta} />
