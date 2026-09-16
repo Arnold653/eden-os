@@ -147,7 +147,7 @@ function defaultSettings() {
     { id: uid(), name: 'Famille' }, { id: uid(), name: 'Amis' }, { id: uid(), name: 'Mentors' },
     { id: uid(), name: 'Disciples' }, { id: uid(), name: 'Autre' },
   ];
-  return { groups: g, categories: cats, donTypes, comptes, disciplines, timeCategories, healthMetrics, growthHabits, relationCategories, objectifZero: false, disabledCapitals: ['temporel', 'physique', 'intellectuel', 'relationnel'], disabledModules: [], currency: 'FCFA', exchangeRates: { ...DEFAULT_EXCHANGE_RATES }, theme: 'system' };
+  return { groups: g, categories: cats, donTypes, comptes, disciplines, timeCategories, healthMetrics, growthHabits, relationCategories, objectifZero: false, budgetModel: 'classique', disabledCapitals: ['temporel', 'physique', 'intellectuel', 'relationnel'], disabledModules: [], currency: 'FCFA', exchangeRates: { ...DEFAULT_EXCHANGE_RATES }, theme: 'system' };
 }
 
 // ---------- shared UI ----------
@@ -1032,6 +1032,11 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
             investCategoryId: investCat?.id || settings.categories[0]?.id || '',
             plaisirCategoryId: plaisirCat?.id || settings.categories[0]?.id || '',
           });
+        } else if (settings.budgetModel === '10-20-70') {
+          const dime = Math.round(montant * 0.10 / 5) * 5;
+          const epargne = Math.round(montant * 0.20 / 5) * 5;
+          const reste = Math.max(0, montant - dime - epargne);
+          setSuggestion({ kind: '10-20-70', montant, dime, epargne, reste, provisionCible: (provisions||[])[0] || null });
         } else {
           const dime = Math.round(montant * 0.10 / 5) * 5;
           const epargne = Math.round(montant * 0.10 / 5) * 5;
@@ -1177,6 +1182,30 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
             </div>
           </div>
           <div style={{ fontSize: 10, color: C.fade, marginTop: 8, fontStyle: 'italic' }}>Suggestion indicative, fondée sur des principes de gestion fidèle (dîme, provision, désendettement) — à toi d'ajuster selon ta situation.</div>
+        </Card>
+      )}
+
+      {suggestion && kind === 'revenu' && suggestion.kind === '10-20-70' && (
+        <Card style={{ marginBottom: 14, border: `1px solid ${C.gold}`, background: C.cream }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.heading }}>Modèle 10-20-70 pour {fmt(suggestion.montant)}</span>
+            <IconBtn onClick={() => setSuggestion(null)}><X size={15} /></IconBtn>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div><div style={{ fontSize: 12.5, fontWeight: 700 }}>Dîme — Royaume (10%)</div><div style={{ fontSize: 11, color: C.fade }}>{fmt(suggestion.dime)}</div></div>
+              {doneActions.dime ? <Pill color={C.green}>Enregistré ✓</Pill> : <button onClick={enregistrerDime} style={{ background: C.gold, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Enregistrer</button>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div><div style={{ fontSize: 12.5, fontWeight: 700 }}>Épargne & Investissement — Avenir (20%)</div><div style={{ fontSize: 11, color: C.fade }}>{fmt(suggestion.epargne)}{suggestion.provisionCible ? ` · vers « ${suggestion.provisionCible.name} »` : ''}</div></div>
+              {!suggestion.provisionCible ? <span style={{ fontSize: 10, color: C.fade }}>Aucune provision créée</span> : doneActions.epargne ? <Pill color={C.green}>Fait ✓</Pill> : <button onClick={cotiserProvision} style={{ background: C.purple, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cotiser</button>}
+            </div>
+            <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12.5, color: C.fade }}>Reste à vivre — Présent (70%, dettes incluses)</span>
+              <span style={{ fontSize: 13, fontWeight: 700, fontFamily: FONT_MONO, color: C.heading }}>{fmt(suggestion.reste)}</span>
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: C.fade, marginTop: 8, fontStyle: 'italic' }}>Dieu d'abord, Moi Futur ensuite, Moi Présent en dernier — l'ordre est la clé. Les 70% couvrent tout, y compris le remboursement de tes dettes.</div>
         </Card>
       )}
 
@@ -4793,6 +4822,27 @@ function ParametresPanel({ settings, saveSettings, onClose, onExport, onImport, 
         </Card>
 
         <SectionTitle>Préférences</SectionTitle>
+        <Card style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Modèle budgétaire</div>
+          <div style={{ fontSize: 11, color: C.fade, marginBottom: 10 }}>Détermine la suggestion affichée quand tu enregistres un revenu régulier dans Mouvements.</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 10, borderRadius: 10, border: `1px solid ${settings.budgetModel !== '10-20-70' ? C.navy : C.line}`, cursor: 'pointer' }}>
+              <input type="radio" checked={settings.budgetModel !== '10-20-70'} onChange={() => saveSettings({ ...settings, budgetModel: 'classique' })} style={{ marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 700 }}>Classique</div>
+                <div style={{ fontSize: 11, color: C.fade }}>Dîme 10% · Épargne 10% · Dette prioritaire · Reste</div>
+              </div>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 10, borderRadius: 10, border: `1px solid ${settings.budgetModel === '10-20-70' ? C.navy : C.line}`, cursor: 'pointer' }}>
+              <input type="radio" checked={settings.budgetModel === '10-20-70'} onChange={() => saveSettings({ ...settings, budgetModel: '10-20-70' })} style={{ marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 700 }}>10-20-70 (Royaume — Avenir — Présent)</div>
+                <div style={{ fontSize: 11, color: C.fade }}>Dîme 10% · Épargne &amp; Investissement 20% · Reste à vivre 70% (dettes incluses dedans)</div>
+              </div>
+            </label>
+          </div>
+        </Card>
+
         <Card>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
