@@ -1930,7 +1930,7 @@ function monthsBetweenDates(d1, d2) {
   return Math.max(1, months);
 }
 
-function ProvisionsTab({ settings, provisions, saveProvisions, monthIdx, onTrash }) {
+function ProvisionsTab({ settings, provisions, saveProvisions, monthIdx, onTrash, transactions }) {
   const [type, setType] = useState('recurrent');
   const [editingId, setEditingId] = useState(null);
   const [name, setName] = useState('');
@@ -1993,9 +1993,44 @@ function ProvisionsTab({ settings, provisions, saveProvisions, monthIdx, onTrash
 
   const curSymbol = CURRENCIES[settings.currency || 'FCFA'].symbol;
 
+  // --- Fonds d'urgence : cible calculée sur 3 à 6 mois de dépenses de vie ---
+  const hasFondsUrgence = provisions.some(p => /urgence/i.test(p.name));
+  const depenseMonths = {};
+  (transactions || []).filter(t => t.type === 'depense').forEach(t => {
+    const key = t.date.slice(0, 7);
+    depenseMonths[key] = (depenseMonths[key] || 0) + Number(t.amount || 0);
+  });
+  const monthKeys = Object.keys(depenseMonths).sort().slice(-6);
+  const avgMonthlyDepenses = monthKeys.length > 0 ? monthKeys.reduce((s,k) => s + depenseMonths[k], 0) / monthKeys.length : 0;
+  function creerFondsUrgence(mois) {
+    setType('projet');
+    setName('Fonds d\'urgence');
+    setTargetAmount(String(Math.round(avgMonthlyDepenses * mois / 100) * 100));
+    const d = new Date(); d.setMonth(d.getMonth() + 12);
+    setTargetDate(d.toISOString().slice(0, 10));
+    setStartDate(todayISO());
+  }
+
   return (
     <div>
       <SectionTitle sub="Lisse les charges annuelles irrégulières et finance tes projets de vie (mariage, business, maternité...).">Provisions</SectionTitle>
+
+      {!hasFondsUrgence && avgMonthlyDepenses > 0 && (
+        <Card style={{ marginBottom: 14, border: `1px solid ${C.gold}`, background: C.cream }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: C.heading, marginBottom: 4 }}>Principe de Joseph : pas encore de Fonds d'urgence</div>
+          <div style={{ fontSize: 11.5, color: C.fade, marginBottom: 10 }}>
+            Basé sur ta moyenne de dépenses ({monthKeys.length} mois observés) : <strong>{fmt(avgMonthlyDepenses)}</strong> / mois en moyenne.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => creerFondsUrgence(3)} style={{ flex: 1, background: '#fff', border: `1px solid ${C.gold}`, color: C.heading, borderRadius: 8, padding: '10px 6px', fontSize: 12, fontWeight: 700, cursor: 'pointer', textAlign: 'center' }}>
+              3 mois<br/><span style={{ fontFamily: FONT_MONO, fontSize: 13 }}>{fmt(avgMonthlyDepenses * 3)}</span>
+            </button>
+            <button onClick={() => creerFondsUrgence(6)} style={{ flex: 1, background: C.gold, border: 'none', color: '#fff', borderRadius: 8, padding: '10px 6px', fontSize: 12, fontWeight: 700, cursor: 'pointer', textAlign: 'center' }}>
+              6 mois<br/><span style={{ fontFamily: FONT_MONO, fontSize: 13 }}>{fmt(avgMonthlyDepenses * 6)}</span>
+            </button>
+          </div>
+        </Card>
+      )}
       <Card style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           {[['recurrent','Charge récurrente'],['projet','Projet / Objectif']].map(([k,label]) => (
@@ -5672,7 +5707,7 @@ export default function App() {
           {tab === 'dashboard' && <Dashboard revenuMois={revenuMois} donsMois={donsMois} depensesMois={depensesMois} soldeMois={soldeMois} tauxDime={tauxDime} pieData={pieData} last6={last6} comptesSoldes={comptesSoldes} objectifZero={settings.objectifZero} indice={indiceGlobal} settings={settings} transactions={transactions} debts={debts} timeLogs={timeLogs} healthLogs={healthLogs} disciplineLogs={disciplineLogs} decisions={decisions} objectifs={objectifs} revues={revues} provisions={provisions} lectures={lectures} lectureLogs={lectureLogs} growthLogs={growthLogs} monthIdx={monthIdx} year={year} onNavigate={navigateTab} />}
           {tab === 'transactions' && <TransactionsTab settings={settings} monthTx={monthTx} transactions={transactions} year={year} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} groupTotals={groupTotals} debts={debts} saveDebts={saveDebts} provisions={provisions} saveProvisions={saveProvisions} />}
           {tab === 'royaume' && <RoyaumeTab settings={settings} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} fastingSessions={fastingSessions} saveFastingSessions={saveFastingSessions} evangelisationContacts={evangelisationContacts} saveEvangelisationContacts={saveEvangelisationContacts} />}
-          {tab === 'provisions' && <ProvisionsTab settings={settings} provisions={provisions} saveProvisions={saveProvisions} monthIdx={monthIdx} onTrash={moveToTrash} />}
+          {tab === 'provisions' && <ProvisionsTab settings={settings} provisions={provisions} saveProvisions={saveProvisions} monthIdx={monthIdx} onTrash={moveToTrash} transactions={transactions} />}
           {tab === 'dettes' && <DettesTab settings={settings} debts={debts} saveDebts={saveDebts} onTrash={moveToTrash} />}
           {tab === 'sagesse' && <SagesseTab decisions={decisions} saveDecisions={saveDecisions} journal={journal} saveJournal={saveJournal} onTrash={moveToTrash} />}
           {tab === 'conseil' && <ConseilTab settings={settings} transactions={transactions} disciplineLogs={disciplineLogs} contacts={contacts} decisions={decisions} revues={revues} provisions={provisions} objectifs={objectifs} lectures={lectures} lectureLogs={lectureLogs} debts={debts} />}
