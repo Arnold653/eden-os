@@ -1030,6 +1030,7 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
   const [donTypeId, setDonTypeId] = useState(settings.donTypes[0]?.id || '');
   const [beneficiary, setBeneficiary] = useState('');
   const [receipt, setReceipt] = useState(false);
+  const [augmentation, setAugmentation] = useState(null);
 
   useEffect(() => { if (!settings.categories.find(c => c.id === categoryId)) setCategoryId(settings.categories[0]?.id || ''); }, [settings.categories]);
   useEffect(() => { if (!settings.comptes.find(c => c.id === compteId)) setCompteId(settings.comptes[0]?.id || ''); }, [settings.comptes]);
@@ -1055,6 +1056,20 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
       addTransaction(payload);
       if (kind === 'revenu') {
         const montant = Number(amount);
+        if (source) {
+          const sameSource = transactions.filter(t => t.type === 'revenu' && t.source === source).map(t => Number(t.amount||0));
+          if (sameSource.length >= 2) {
+            const avgPast = sameSource.reduce((s,a) => s+a, 0) / sameSource.length;
+            if (montant > avgPast * 1.1) {
+              const augmentationMontant = montant - avgPast;
+              setAugmentation({ source, avgPast, montant, augmentationMontant, part: augmentationMontant / 2, provisionCible: (provisions||[])[0] || null });
+            } else {
+              setAugmentation(null);
+            }
+          } else {
+            setAugmentation(null);
+          }
+        }
         if (isImprevu) {
           const dime = Math.round(montant * 0.10 / 5) * 5;
           const epargne = Math.round(montant * 0.30 / 5) * 5;
@@ -1096,6 +1111,11 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
     if (!suggestion.provisionCible) return;
     saveProvisions(provisions.map(p => p.id === suggestion.provisionCible.id ? { ...p, reserveCurrent: p.reserveCurrent + suggestion.epargne } : p));
     setDoneActions({ ...doneActions, epargne: true });
+  }
+  function cotiserAugmentation() {
+    if (!augmentation || !augmentation.provisionCible) return;
+    saveProvisions(provisions.map(p => p.id === augmentation.provisionCible.id ? { ...p, reserveCurrent: p.reserveCurrent + augmentation.part } : p));
+    setAugmentation({ ...augmentation, done: true });
   }
   function payerDette() {
     if (!suggestion.dettePrioritaire) return;
@@ -1191,6 +1211,28 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
         </div>
       </Card>
 
+      {augmentation && kind === 'revenu' && (
+        <Card style={{ marginBottom: 14, border: `1px solid ${C.purple}`, background: C.cream }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.heading }}>Augmentation détectée sur « {augmentation.source} »</span>
+            <IconBtn onClick={() => setAugmentation(null)}><X size={15} /></IconBtn>
+          </div>
+          <div style={{ fontSize: 11.5, color: C.fade, marginBottom: 8 }}>
+            Moyenne précédente : {fmt(augmentation.avgPast)} → Ce mois : {fmt(augmentation.montant)} (+{fmt(augmentation.augmentationMontant)})
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div><div style={{ fontSize: 12.5, fontWeight: 700 }}>Règle des 50% — Vie</div><div style={{ fontSize: 11, color: C.fade }}>{fmt(augmentation.part)} — garde ton train de vie stable</div></div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div><div style={{ fontSize: 12.5, fontWeight: 700 }}>Règle des 50% — Investissement</div><div style={{ fontSize: 11, color: C.fade }}>{fmt(augmentation.part)}{augmentation.provisionCible ? ` · vers « ${augmentation.provisionCible.name} »` : ''}</div></div>
+              {!augmentation.provisionCible ? <span style={{ fontSize: 10, color: C.fade }}>Aucune provision créée</span> : augmentation.done ? <Pill color={C.green}>Fait ✓</Pill> : <button onClick={cotiserAugmentation} style={{ background: C.purple, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cotiser</button>}
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: C.fade, marginTop: 8, fontStyle: 'italic' }}>Babylone vous pousse à augmenter votre train de vie dès que vos revenus montent. Gardez-le stable et utilisez le surplus pour bâtir un actif.</div>
+        </Card>
+      )}
+
       {suggestion && kind === 'revenu' && suggestion.kind === 'normal' && (
         <Card style={{ marginBottom: 14, border: `1px solid ${C.gold}`, background: C.cream }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1221,8 +1263,7 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
         </Card>
       )}
 
-      {suggestion && kind === 'revenu' && suggestion.kind === '10-20-70' && (
-        <Card style={{ marginBottom: 14, border: `1px solid ${C.gold}`, background: C.cream }}>
+      {suggestion && kind === 'revenu' && suggestion.kind === '10-20-70' && (        <Card style={{ marginBottom: 14, border: `1px solid ${C.gold}`, background: C.cream }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: C.heading }}>Modèle 10-20-70 pour {fmt(suggestion.montant)}</span>
             <IconBtn onClick={() => setSuggestion(null)}><X size={15} /></IconBtn>
