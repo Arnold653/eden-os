@@ -1809,6 +1809,16 @@ function BibleReader({ discipline, disciplineLogs, saveDisciplineLogs, bibleProg
   const [selectedBook, setSelectedBook] = useState(allBooks[0].name);
   const [note, setNote] = useState('');
   const [showHist, setShowHist] = useState(false);
+  const [showMeditation, setShowMeditation] = useState(false);
+  const MEDITATION_STEPS = [
+    'Applique la Parole à toi personnellement.',
+    'Permets au Saint-Esprit de faire de cette Parole une réalité dans ton cœur.',
+    'Réfléchis soigneusement à la manière dont elle s\'applique à ta vie.',
+    'Insiste sur la façon dont elle change ta situation.',
+    'Mets-toi en accord avec ce qu\'elle dit à ton sujet.',
+    'Vois-toi comme Dieu te voit.',
+    'Commence à réaliser l\'intégrité de la Parole de Dieu.',
+  ];
 
   const mine = disciplineLogs.filter(l => l.disciplineId === discipline.id).sort((a,b) => new Date(b.date) - new Date(a.date));
   const avecNote = mine.filter(l => l.note);
@@ -1872,7 +1882,22 @@ function BibleReader({ discipline, disciplineLogs, saveDisciplineLogs, bibleProg
       <p style={{ fontSize: 10.5, color: C.fade, marginTop: 0, marginBottom: 14 }}>Touche un chapitre pour le marquer comme lu.</p>
 
       <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 10, color: C.fade, marginBottom: 3 }}>Réflexion du jour (optionnel)</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+          <div style={{ fontSize: 10, color: C.fade }}>Réflexion du jour (optionnel)</div>
+          <button onClick={() => setShowMeditation(!showMeditation)} style={{ background: 'none', border: 'none', color: C.purple, fontSize: 10, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+            {showMeditation ? '▾ Masquer le guide' : '▸ Guide de méditation (7 étapes)'}
+          </button>
+        </div>
+        {showMeditation && (
+          <div style={{ background: C.cream, border: `1px solid ${C.line}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+            <div style={{ fontSize: 10.5, color: C.fade, marginBottom: 6, fontStyle: 'italic' }}>Fixe ton esprit sur ce que tu viens de lire, une étape à la fois :</div>
+            <ol style={{ margin: 0, paddingLeft: 16, display: 'grid', gap: 4 }}>
+              {MEDITATION_STEPS.map((s, i) => (
+                <li key={i} style={{ fontSize: 11.5, color: C.ink }}>{s}</li>
+              ))}
+            </ol>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8 }}>
           <TextInput placeholder="Passage, réflexion, ce qui a marqué…" value={note} onChange={e => setNote(e.target.value)} style={{ flex: 1 }} />
           <MicButton onResult={t => setNote(v => v ? v + ' ' + t : t)} />
