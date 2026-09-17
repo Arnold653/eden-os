@@ -1383,7 +1383,8 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
 }
 
 // ---------- Royaume (Dons + Disciplines) ----------
-function RoyaumeTab({ settings, disciplineLogs, saveDisciplineLogs, disciplineSubjects, saveDisciplineSubjects, bibleProgress, saveBibleProgress, fastingSessions, saveFastingSessions, evangelisationContacts, saveEvangelisationContacts }) {
+function RoyaumeTab({ settings, transactions, disciplineLogs, saveDisciplineLogs, disciplineSubjects, saveDisciplineSubjects, bibleProgress, saveBibleProgress, fastingSessions, saveFastingSessions, evangelisationContacts, saveEvangelisationContacts, retraitsFoi, saveRetraitsFoi }) {
+  const [subview, setSubview] = useState('disciplines');
   // --- disciplines logging ---
   const now = new Date();
   const [logValue, setLogValue] = useState({});
@@ -1400,6 +1401,20 @@ function RoyaumeTab({ settings, disciplineLogs, saveDisciplineLogs, disciplineSu
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        {[['disciplines','Disciplines'],['compte-celeste','Compte céleste']].map(([k,label]) => (
+          <button key={k} onClick={() => setSubview(k)} style={{
+            flex: 1, padding: '9px', borderRadius: 8, border: `1px solid ${C.line}`, fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            background: subview === k ? C.navy : '#fff', color: subview === k ? '#fff' : C.ink,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {subview === 'compte-celeste' && (
+        <CompteCeleste transactions={transactions} settings={settings} retraitsFoi={retraitsFoi} saveRetraitsFoi={saveRetraitsFoi} />
+      )}
+
+      {subview === 'disciplines' && (
       <div style={{ display: 'grid', gap: 10 }}>
         <SectionTitle sub="Indicateurs de régularité aux engagements pris — pas une mesure de maturité spirituelle. Les sujets de prière et les notes de lecture n'entrent jamais dans l'Indice d'Intendance : ils restent un espace de mémoire, pas de performance.">Disciplines du mois</SectionTitle>
         <div style={{ display: 'grid', gap: 10 }}>
@@ -1463,6 +1478,104 @@ function RoyaumeTab({ settings, disciplineLogs, saveDisciplineLogs, disciplineSu
             {settings.disciplines.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucune discipline définie — ajoute-en dans Paramètres.</p>}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Compte céleste : dépôts (dons) + retraits par la foi ----------
+function CompteCeleste({ transactions, settings, retraitsFoi, saveRetraitsFoi }) {
+  const [texte, setTexte] = useState('');
+  const [montant, setMontant] = useState('');
+  const [noteDraft, setNoteDraft] = useState({});
+
+  const dons = transactions.filter(t => t.type === 'don');
+  const totalDepots = dons.reduce((s,t) => s + Number(t.amount||0), 0);
+  const typeById = Object.fromEntries(settings.donTypes.map(d => [d.id, d]));
+  const parType = settings.donTypes.map(dt => ({ ...dt, total: dons.filter(t => t.donTypeId === dt.id).reduce((s,t) => s + Number(t.amount||0), 0) }));
+
+  const attente = retraitsFoi.filter(r => r.statut === 'attente').sort((a,b) => new Date(b.dateCreation) - new Date(a.dateCreation));
+  const recus = retraitsFoi.filter(r => r.statut === 'recu').sort((a,b) => new Date(b.dateReponse) - new Date(a.dateReponse));
+
+  function addRetrait() {
+    if (!texte.trim()) return;
+    saveRetraitsFoi([{ id: uid(), texte: texte.trim(), montant: montant ? Number(montant) : null, statut: 'attente', dateCreation: todayISO(), dateReponse: null, note: '' }, ...retraitsFoi]);
+    setTexte(''); setMontant('');
+  }
+  function marquerRecu(id) {
+    saveRetraitsFoi(retraitsFoi.map(r => r.id === id ? { ...r, statut: 'recu', dateReponse: todayISO() } : r));
+  }
+  function reouvrir(id) {
+    saveRetraitsFoi(retraitsFoi.map(r => r.id === id ? { ...r, statut: 'attente', dateReponse: null } : r));
+  }
+  function saveNote(id) {
+    saveRetraitsFoi(retraitsFoi.map(r => r.id === id ? { ...r, note: noteDraft[id] ?? r.note } : r));
+  }
+  function removeRetrait(id) {
+    saveRetraitsFoi(retraitsFoi.filter(r => r.id !== id));
+  }
+
+  return (
+    <div>
+      <Card style={{ marginBottom: 14, background: `linear-gradient(155deg, ${C.gold} 0%, ${shade(C.gold,-18)} 100%)`, border: 'none', color: '#fff', position: 'relative', overflow: 'hidden' }}>
+        <Watermark Icon={Crown} size={72} top={-16} right={-10} opacity={0.18} />
+        <div style={{ fontSize: 11, opacity: 0.9 }}>Solde de dépôts célestes (cumul)</div>
+        <div style={{ fontSize: 22, fontWeight: 800, fontFamily: FONT_MONO }}>{fmt(totalDepots)}</div>
+        <div style={{ fontSize: 10, opacity: 0.85, marginTop: 4, fontStyle: 'italic' }}>« Pas de dépôt, pas de retrait. » — chaque dîme, offrande et semence est un dépôt sur ton compte au ciel.</div>
+      </Card>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+        {parType.map(t => (
+          <Card key={t.id}><div style={{ fontSize: 10.5, color: C.fade }}>{t.name}</div><div style={{ fontFamily: FONT_MONO, fontWeight: 700 }}>{fmt(t.total)}</div></Card>
+        ))}
+      </div>
+
+      <SectionTitle sub="Une demande précise, portée par la foi, appuyée sur les dépôts déjà faits — pas un vœu vague.">Retraits par la foi</SectionTitle>
+      <Card style={{ marginBottom: 14 }}>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <TextInput placeholder="Ce que tu demandes par la foi (ex: un véhicule, une ouverture financière)" value={texte} onChange={e => setTexte(e.target.value)} />
+          <TextInput type="number" placeholder="Montant visé (optionnel)" value={montant} onChange={e => setMontant(e.target.value)} />
+          <button onClick={addRetrait} disabled={!texte.trim()} style={{ background: C.gold, color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 13, cursor: texte.trim() ? 'pointer' : 'default' }}>+ Faire ce retrait par la foi</button>
+        </div>
+      </Card>
+
+      {attente.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.heading, marginBottom: 4 }}>En attente ({attente.length})</div>
+          {attente.map(r => (
+            <div key={r.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 13 }}>{r.texte}{r.montant ? ` · ${fmt(r.montant)}` : ''}<span style={{ color: C.fade, fontSize: 10 }}> · depuis le {r.dateCreation}</span></div>
+                <IconBtn onClick={() => removeRetrait(r.id)}><Trash2 size={13} /></IconBtn>
+              </div>
+              <button onClick={() => marquerRecu(r.id)} style={{ marginTop: 4, background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>✓ Reçu</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {recus.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.green, marginBottom: 4 }}>Reçus ({recus.length})</div>
+          {recus.map(r => (
+            <div key={r.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.line}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontSize: 13 }}>{r.texte}{r.montant ? ` · ${fmt(r.montant)}` : ''}<span style={{ color: C.fade, fontSize: 10 }}> · reçu le {r.dateReponse}</span></div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={() => reouvrir(r.id)} style={{ background: 'none', border: `1px solid ${C.line}`, borderRadius: 6, padding: '2px 6px', fontSize: 9, cursor: 'pointer', color: C.fade }}>Rouvrir</button>
+                  <IconBtn onClick={() => removeRetrait(r.id)}><Trash2 size={13} /></IconBtn>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                <TextInput placeholder="Témoignage…" value={noteDraft[r.id] ?? r.note} onChange={e => setNoteDraft({ ...noteDraft, [r.id]: e.target.value })} onBlur={() => saveNote(r.id)} style={{ fontSize: 12, flex: 1 }} />
+                <MicButton size={13} onResult={t => { const v = (noteDraft[r.id] ?? r.note) || ''; const nv = v ? v + ' ' + t : t; setNoteDraft({ ...noteDraft, [r.id]: nv }); saveRetraitsFoi(retraitsFoi.map(x => x.id === r.id ? { ...x, note: nv } : x)); }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {retraitsFoi.length === 0 && <p style={{ fontSize: 13, color: C.fade }}>Aucun retrait par la foi enregistré pour l'instant.</p>}
     </div>
   );
 }
@@ -5427,6 +5540,7 @@ export default function App() {
   const [bibleProgress, setBibleProgress] = useState({});
   const [fastingSessions, setFastingSessions] = useState([]);
   const [evangelisationContacts, setEvangelisationContacts] = useState([]);
+  const [retraitsFoi, setRetraitsFoi] = useState([]);
   const [relationLogs, setRelationLogs] = useState([]);
   const [trash, setTrash] = useState([]);
   const [tab, setTabRaw] = useState(() => {
@@ -5530,6 +5644,7 @@ export default function App() {
       try { const bp = await window.storage.get('bibleProgress'); setBibleProgress(bp ? JSON.parse(bp.value) : {}); } catch (e) { setBibleProgress({}); }
       try { const fs = await window.storage.get('fastingSessions'); setFastingSessions(fs ? JSON.parse(fs.value) : []); } catch (e) { setFastingSessions([]); }
       try { const ec = await window.storage.get('evangelisationContacts'); setEvangelisationContacts(ec ? JSON.parse(ec.value) : []); } catch (e) { setEvangelisationContacts([]); }
+      try { const rf = await window.storage.get('retraitsFoi'); setRetraitsFoi(rf ? JSON.parse(rf.value) : []); } catch (e) { setRetraitsFoi([]); }
       try { const rl = await window.storage.get('relationLogs'); setRelationLogs(rl ? JSON.parse(rl.value) : []); } catch (e) { setRelationLogs([]); }
       try {
         const tr = await window.storage.get('trash');
@@ -5554,7 +5669,7 @@ export default function App() {
       settings, transactions, debts, provisions, decisions, journal, disciplineLogs, visionDoc,
       objectifs, revues, timeLogs, healthLogs, poidsLogs, manualScores, lectures, lectureLogs,
       growthLogs, contacts, disciplineSubjects, relationLogs, trash, bibleProgress,
-      fastingSessions, evangelisationContacts,
+      fastingSessions, evangelisationContacts, retraitsFoi,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -5578,7 +5693,7 @@ export default function App() {
         poidsLogs: setPoidsLogs, manualScores: setManualScores, lectures: setLectures, lectureLogs: setLectureLogs,
         growthLogs: setGrowthLogs, contacts: setContacts, disciplineSubjects: setDisciplineSubjects, relationLogs: setRelationLogs, trash: setTrash,
         bibleProgress: setBibleProgress,
-        fastingSessions: setFastingSessions, evangelisationContacts: setEvangelisationContacts,
+        fastingSessions: setFastingSessions, evangelisationContacts: setEvangelisationContacts, retraitsFoi: setRetraitsFoi,
       };
       for (const key of Object.keys(setters)) {
         if (data[key] !== undefined) {
@@ -5675,6 +5790,10 @@ export default function App() {
   async function saveEvangelisationContacts(next) {
     setEvangelisationContacts(next);
     try { await window.storage.set('evangelisationContacts', JSON.stringify(next)); } catch (e) { console.error(e); }
+  }
+  async function saveRetraitsFoi(next) {
+    setRetraitsFoi(next);
+    try { await window.storage.set('retraitsFoi', JSON.stringify(next)); } catch (e) { console.error(e); }
   }
   async function saveRelationLogs(next) {
     setRelationLogs(next);
@@ -5813,7 +5932,7 @@ export default function App() {
         <div style={{ padding: '16px 16px 8px' }}>
           {tab === 'dashboard' && <Dashboard revenuMois={revenuMois} donsMois={donsMois} depensesMois={depensesMois} soldeMois={soldeMois} tauxDime={tauxDime} pieData={pieData} last6={last6} comptesSoldes={comptesSoldes} objectifZero={settings.objectifZero} indice={indiceGlobal} settings={settings} transactions={transactions} debts={debts} timeLogs={timeLogs} healthLogs={healthLogs} disciplineLogs={disciplineLogs} decisions={decisions} objectifs={objectifs} revues={revues} provisions={provisions} lectures={lectures} lectureLogs={lectureLogs} growthLogs={growthLogs} monthIdx={monthIdx} year={year} onNavigate={navigateTab} />}
           {tab === 'transactions' && <TransactionsTab settings={settings} monthTx={monthTx} transactions={transactions} year={year} addTransaction={addTransaction} updateTransaction={updateTransaction} duplicateTransaction={duplicateTransaction} deleteTransaction={deleteTransaction} groupTotals={groupTotals} debts={debts} saveDebts={saveDebts} provisions={provisions} saveProvisions={saveProvisions} />}
-          {tab === 'royaume' && <RoyaumeTab settings={settings} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} fastingSessions={fastingSessions} saveFastingSessions={saveFastingSessions} evangelisationContacts={evangelisationContacts} saveEvangelisationContacts={saveEvangelisationContacts} />}
+          {tab === 'royaume' && <RoyaumeTab settings={settings} transactions={transactions} disciplineLogs={disciplineLogs} saveDisciplineLogs={saveDisciplineLogs} disciplineSubjects={disciplineSubjects} saveDisciplineSubjects={saveDisciplineSubjects} bibleProgress={bibleProgress} saveBibleProgress={saveBibleProgress} fastingSessions={fastingSessions} saveFastingSessions={saveFastingSessions} evangelisationContacts={evangelisationContacts} saveEvangelisationContacts={saveEvangelisationContacts} retraitsFoi={retraitsFoi} saveRetraitsFoi={saveRetraitsFoi} />}
           {tab === 'provisions' && <ProvisionsTab settings={settings} provisions={provisions} saveProvisions={saveProvisions} monthIdx={monthIdx} onTrash={moveToTrash} transactions={transactions} />}
           {tab === 'dettes' && <DettesTab settings={settings} debts={debts} saveDebts={saveDebts} onTrash={moveToTrash} />}
           {tab === 'sagesse' && <SagesseTab decisions={decisions} saveDecisions={saveDecisions} journal={journal} saveJournal={saveJournal} onTrash={moveToTrash} />}
