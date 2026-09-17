@@ -1030,6 +1030,8 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
   const [donTypeId, setDonTypeId] = useState(settings.donTypes[0]?.id || '');
   const [beneficiary, setBeneficiary] = useState('');
   const [receipt, setReceipt] = useState(false);
+  const [confessed, setConfessed] = useState(false);
+  const [showConfession, setShowConfession] = useState(false);
   const [augmentation, setAugmentation] = useState(null);
 
   useEffect(() => { if (!settings.categories.find(c => c.id === categoryId)) setCategoryId(settings.categories[0]?.id || ''); }, [settings.categories]);
@@ -1041,14 +1043,14 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
   const compteById = Object.fromEntries(settings.comptes.map(c => [c.id, c]));
   const typeById = Object.fromEntries(settings.donTypes.map(d => [d.id, d]));
 
-  function resetForm() { setEditingId(null); setAmount(''); setNote(''); setSource(''); setIsImprevu(false); setBeneficiary(''); setReceipt(false); }
+  function resetForm() { setEditingId(null); setAmount(''); setNote(''); setSource(''); setIsImprevu(false); setBeneficiary(''); setReceipt(false); setConfessed(false); }
   function submit() {
     if (!amount) return;
     if (kind === 'revenu' && !source) return;
     if (kind === 'depense' && !categoryId) return;
     if (kind === 'don' && !donTypeId) return;
     const payload = kind === 'don'
-      ? { type: 'don', donTypeId, beneficiary, compteId, amount: Number(amount), date, receipt }
+      ? { type: 'don', donTypeId, beneficiary, compteId, amount: Number(amount), date, receipt, confessed }
       : { type: kind, categoryId: kind === 'depense' ? categoryId : undefined, source: kind === 'revenu' ? source : undefined, compteId, amount: Number(amount), date, note };
     if (editingId) {
       updateTransaction(editingId, payload);
@@ -1138,7 +1140,7 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
   function startEdit(t) {
     setEditingId(t.id); setKind(t.type); setCategoryId(t.categoryId || settings.categories[0]?.id || '');
     setCompteId(t.compteId || settings.comptes[0]?.id || ''); setSource(t.source || '');
-    setDonTypeId(t.donTypeId || settings.donTypes[0]?.id || ''); setBeneficiary(t.beneficiary || ''); setReceipt(!!t.receipt);
+    setDonTypeId(t.donTypeId || settings.donTypes[0]?.id || ''); setBeneficiary(t.beneficiary || ''); setReceipt(!!t.receipt); setConfessed(!!t.confessed);
     setAmount(String(t.amount)); setDate(t.date); setNote(t.note || '');
   }
 
@@ -1201,6 +1203,24 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
               <input type="checkbox" checked={receipt} onChange={e => setReceipt(e.target.checked)} /> Reçu obtenu
             </label>
+          )}
+          {kind === 'don' && typeById[donTypeId]?.isTithe && (
+            <div>
+              <button type="button" onClick={() => setShowConfession(!showConfession)} style={{ background: 'none', border: 'none', color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: 6 }}>
+                {showConfession ? '▾ Masquer la confession de la dîme' : '▸ Confession de la dîme (Deutéronome 26)'}
+              </button>
+              {showConfession && (
+                <div style={{ background: C.cream, border: `1px solid ${C.line}`, borderRadius: 8, padding: 10, fontSize: 12, lineHeight: 1.6, color: C.ink, marginBottom: 8 }}>
+                  <p style={{ margin: '0 0 6px' }}>Avant de valider, présente ta dîme au Seigneur en la déclarant — pas juste un virement silencieux :</p>
+                  <p style={{ margin: 0, fontStyle: 'italic' }}>
+                    « Je déclare aujourd'hui au Seigneur Dieu que je suis entré dans l'héritage qu'il a juré de me donner. Je suis dans le pays que tu m'as donné en Jésus-Christ, le royaume de Dieu tout-puissant. J'étais un pécheur au service de Satan, mais j'ai invoqué le Nom de Jésus, et tu as entendu mon cri et m'as délivré de la puissance des ténèbres pour me transporter dans le royaume de ton Fils bien-aimé. Jésus est mon Seigneur, et je lui apporte les prémices de mes revenus en tant que Souverain Sacrificateur, et je t'adore avec. Je me réjouis de tout le bien que tu m'as donné, ainsi qu'à ma maison. J'ai écouté ta voix et j'ai fait selon tout ce que tu m'as commandé. Regarde maintenant de ta demeure sainte, du ciel, et bénis-moi comme tu l'as dit dans ta Parole. »
+                  </p>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginTop: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={confessed} onChange={e => setConfessed(e.target.checked)} /> J'ai fait cette confession
+                  </label>
+                </div>
+              )}
+            </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
             <PrimaryButton onClick={submit} disabled={!amount} style={{ flex: 1 }}>
@@ -1367,7 +1387,7 @@ function TransactionsTab({ settings, monthTx, transactions, year, addTransaction
                   : kind === 'don' ? (typeById[t.donTypeId]?.name || '—') + (t.beneficiary ? ' · ' + t.beneficiary : '')
                   : t.source}
               </div>
-              <div style={{ fontSize: 11, color: C.fade }}>{t.date} · {compteById[t.compteId]?.name || '—'}{t.note ? ' · ' + t.note : ''}{kind === 'don' && t.receipt ? ' · reçu ✓' : ''}</div>
+              <div style={{ fontSize: 11, color: C.fade }}>{t.date} · {compteById[t.compteId]?.name || '—'}{t.note ? ' · ' + t.note : ''}{kind === 'don' && t.receipt ? ' · reçu ✓' : ''}{kind === 'don' && t.confessed ? ' · confessé ✓' : ''}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontFamily: FONT_MONO, fontWeight: 700, color: kind === 'depense' ? C.terracotta : kind === 'don' ? C.gold : C.navy }}>{fmt(t.amount)}</span>
